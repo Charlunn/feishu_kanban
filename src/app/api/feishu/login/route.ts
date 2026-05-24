@@ -88,7 +88,8 @@ export async function POST(request: Request) {
                   ...member,
                   name: name || member.name,
                   feishuOpenId: open_id,
-                  permissions: ["create_task", "manage_team"]
+                  roleId: "role_founder",
+                  permissions: ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"]
                 }
               : member
           )
@@ -105,6 +106,7 @@ export async function POST(request: Request) {
             name: name || "飞书成员",
             roleLabel: "普通员工",
             feishuOpenId: open_id,
+            roleId: "role_employee",
             permissions: [],
             mode: "available",
             maxActiveTasks: 2,

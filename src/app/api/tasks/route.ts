@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     let board = await store.update((state) => {
       const actor = state.team.find((member) => member.id === payload.actorUserId);
-      if (!actor || !canCreateTask(actor)) {
+      if (!actor || !canCreateTask(actor, state)) {
         throw new Error("你没有创建任务权限，请联系创始人开通。");
       }
       return createTask(state, {

@@ -1,4 +1,5 @@
 import type { StartupBoardState, StartupTask, TeamMember } from "./models.ts";
+import { DEFAULT_ROLES } from "./permissions.ts";
 
 const now = "2026-05-21T03:45:00.000Z";
 
@@ -8,6 +9,7 @@ export const demoTeam: TeamMember[] = [
     name: "负责人",
     roleLabel: "派活 / 客户判断 / 最终口径",
     feishuOpenId: "ou_founder_demo",
+    roleId: "role_founder",
     permissions: ["create_task", "manage_team"],
     mode: "available",
     maxActiveTasks: 2,
@@ -18,6 +20,7 @@ export const demoTeam: TeamMember[] = [
     name: "搭建手",
     roleLabel: "系统搭建 / 自动化 / 文档",
     feishuOpenId: "ou_builder_demo",
+    roleId: "role_employee",
     permissions: [],
     mode: "available",
     maxActiveTasks: 2,
@@ -28,6 +31,7 @@ export const demoTeam: TeamMember[] = [
     name: "运营手",
     roleLabel: "线索跟进 / 资料整理 / 复核",
     feishuOpenId: "ou_operator_demo",
+    roleId: "role_employee",
     permissions: [],
     mode: "reviewing",
     maxActiveTasks: 2,
@@ -131,6 +135,7 @@ export const demoTasks: StartupTask[] = [
 ];
 
 export const demoState: StartupBoardState = {
+  roles: DEFAULT_ROLES,
   team: demoTeam,
   tasks: demoTasks,
   auditLogs: [],

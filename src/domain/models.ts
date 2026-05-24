@@ -1,5 +1,17 @@
 export type MemberMode = "available" | "focused" | "reviewing" | "away";
-export type TeamPermission = "create_task" | "manage_team";
+export type TeamPermission =
+  | "create_task"
+  | "manage_team"
+  | "manage_roles"
+  | "delete_task"
+  | "manage_all_tasks";
+
+export interface TeamRole {
+  id: string;
+  name: string;
+  permissions: TeamPermission[];
+  system?: boolean;
+}
 
 export type TaskStatus = "pool" | "ready" | "claimed" | "doing" | "review" | "done" | "blocked";
 
@@ -34,6 +46,7 @@ export interface TeamMember {
   name: string;
   roleLabel: string;
   feishuOpenId: string;
+  roleId?: string;
   permissions?: TeamPermission[];
   mode: MemberMode;
   maxActiveTasks: number;
@@ -114,6 +127,7 @@ export interface FeishuUserSession {
 }
 
 export interface StartupBoardState {
+  roles?: TeamRole[];
   team: TeamMember[];
   tasks: StartupTask[];
   auditLogs: BoardAuditLog[];

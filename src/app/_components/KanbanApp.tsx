@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType } from "@/domain/models";
+import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamPermission } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
-import { canCreateTask, canManageTeam } from "@/domain/permissions";
+import { ALL_PERMISSIONS, PERMISSION_LABELS, boardRoles, canCreateTask, canDeleteTask, canManageRoles, canManageTeam, roleForMember } from "@/domain/permissions";
 import { TaskActionPanel } from "./TaskActionPanel";
 import { setNavTitle, setNavFeishuBlue, isInFeishu, requestFeishuAuthCode } from "@/lib/feishu/jssdk";
 
@@ -22,7 +22,7 @@ const RISK_LABEL: Record<string, string> = {
   quote_scope: "报价", sensitive_data: "敏感", ops_only: "内部"
 };
 
-type Tab = "board" | "create" | "stats" | "me";
+type Tab = "board" | "gantt" | "create" | "stats" | "me";
 
 type DragState = {
   taskId: string;
@@ -57,10 +57,14 @@ export function KanbanApp({
   const [session, setSession] = useState<FeishuUserSession | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [selectedTask, setSelectedTask] = useState<StartupTask | null>(null);
+  const [inFeishuClient, setInFeishuClient] = useState(false);
 
   const activeMember = state.team.find((m) => m.id === memberId) || state.team[0];
-  const mayCreateTask = activeMember ? canCreateTask(activeMember) : false;
-  const mayManageTeam = activeMember ? canManageTeam(activeMember) : false;
+  const mayCreateTask = activeMember ? canCreateTask(activeMember, state) : false;
+  const mayManageTeam = activeMember ? canManageTeam(activeMember, state) : false;
+  const mayManageRoles = activeMember ? canManageRoles(activeMember, state) : false;
+  const mayDeleteTask = activeMember ? canDeleteTask(activeMember, state) : false;
+  const connectionLabel = session ? "飞书已登录" : inFeishuClient ? "飞书内打开" : feishuReady ? "飞书已配置" : "本地预览";
 
   const columns = useMemo(() => {
     const grouped: Record<TaskStatus, StartupTask[]> = {
@@ -95,6 +99,7 @@ export function KanbanApp({
 
   // Feishu login on mount (if in Feishu container)
   useEffect(() => {
+    setInFeishuClient(isInFeishu());
     if (!isInFeishu()) return;
     attemptFeishuLogin();
     setNavFeishuBlue();
@@ -106,6 +111,7 @@ export function KanbanApp({
     const badgeCount = summary.waitingReview + overdueCount;
     const tabNames: Record<Tab, string> = {
       board: badgeCount > 0 ? `看板 (${badgeCount})` : "看板",
+      gantt: "甘特图",
       create: "派活",
       stats: "数据统计",
       me: "我的"
@@ -217,6 +223,10 @@ export function KanbanApp({
           <span>看板</span>
           {(summary.waitingReview + overdueCount) > 0 && <span className="sidebar-badge">{summary.waitingReview + overdueCount}</span>}
         </button>
+        <button className={`sidebar-item ${tab === "gantt" ? "active" : ""}`} onClick={() => setTab("gantt")}>
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7" /></svg>
+          <span>甘特</span>
+        </button>
         {mayCreateTask && (
           <button className={`sidebar-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
             <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
@@ -239,10 +249,10 @@ export function KanbanApp({
         {/* Desktop Header */}
         <header className="desktop-header">
           <span className="desktop-header-title">
-            {tab === "board" ? "任务看板" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : "我的"}
+            {tab === "board" ? "任务看板" : tab === "gantt" ? "甘特图" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : "我的"}
           </span>
-          <span className={feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
-            {feishuReady ? "飞书已连接" : "本地预览"}
+          <span className={session || inFeishuClient || feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
+            {connectionLabel}
           </span>
           <button className="desktop-header-avatar" onClick={() => setTab("me")}>
             {session?.name?.[0] || activeMember.name[0]}
@@ -254,8 +264,8 @@ export function KanbanApp({
           <span className="top-bar-title">
             {session ? `${session.name}的工作台` : "AI交付战情看板"}
           </span>
-          <span className={feishuReady ? "top-bar-status" : "top-bar-status offline"}>
-            {feishuReady ? "飞书已连接" : "本地预览"}
+          <span className={session || inFeishuClient || feishuReady ? "top-bar-status" : "top-bar-status offline"}>
+            {connectionLabel}
           </span>
           <button className="top-bar-avatar" onClick={() => setTab("me")} aria-label="我的">
             {session?.name?.[0] || activeMember.name[0]}
@@ -279,6 +289,9 @@ export function KanbanApp({
             onSelectTask={setSelectedTask}
           />
         )}
+        {tab === "gantt" && (
+          <GanttPage state={state} onSelectTask={setSelectedTask} />
+        )}
         {tab === "create" && mayCreateTask && (
           <CreatePage
             state={state} memberId={memberId}
@@ -291,6 +304,7 @@ export function KanbanApp({
             state={state} memberId={memberId} setMemberId={setMemberId}
             columns={columns} session={session}
             canManage={mayManageTeam}
+            canManageRoles={mayManageRoles}
             onTeamUpdated={setState}
             onError={showToast}
             onLogin={() => { if (isInFeishu()) attemptFeishuLogin(); else showToast("请在飞书中打开以使用飞书登录"); }}
@@ -327,6 +341,7 @@ export function KanbanApp({
             task={selectedTask}
             state={state}
             memberId={memberId}
+            canDelete={mayDeleteTask}
             onClose={() => setSelectedTask(null)}
             onAction={({ board, message }) => {
               setState(board);
@@ -345,6 +360,10 @@ export function KanbanApp({
           {(summary.waitingReview + overdueCount) > 0 && (
             <span className="nav-badge">{summary.waitingReview + overdueCount}</span>
           )}
+        </button>
+        <button className={`nav-item ${tab === "gantt" ? "active" : ""}`} onClick={() => setTab("gantt")}>
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7" /></svg>
+          <span>甘特</span>
         </button>
         {mayCreateTask && (
           <button className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
@@ -649,13 +668,14 @@ function CreatePage({
 
 // ===== Me Page =====
 function MePage({
-  state, memberId, setMemberId, columns, session, canManage, onTeamUpdated, onError, onLogin
+  state, memberId, setMemberId, columns, session, canManage, canManageRoles, onTeamUpdated, onError, onLogin
 }: {
   state: StartupBoardState; memberId: string;
   setMemberId: (id: string) => void;
   columns: Record<TaskStatus, StartupTask[]>;
   session: FeishuUserSession | null;
   canManage: boolean;
+  canManageRoles: boolean;
   onTeamUpdated: (state: StartupBoardState) => void;
   onError: (message: string) => void;
   onLogin: () => void;
@@ -671,8 +691,10 @@ function MePage({
   const myOverdue = myTasks.filter(
     (t) => t.dueAt && new Date(t.dueAt).getTime() < Date.now()
   );
+  const roles = boardRoles(state);
+  const [newRoleName, setNewRoleName] = useState("");
 
-  async function updateMember(targetId: string, patch: { name?: string; canCreateTasks?: boolean }) {
+  async function updateMember(targetId: string, patch: { name?: string; roleId?: string; permissions?: TeamPermission[] }) {
     try {
       const res = await fetch(`/api/team/${targetId}`, {
         method: "PATCH",
@@ -684,6 +706,54 @@ function MePage({
       onTeamUpdated(json.board);
     } catch (error) {
       onError(error instanceof Error ? error.message : "成员更新失败");
+    }
+  }
+
+  async function createRole() {
+    const name = newRoleName.trim();
+    if (!name) return;
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, name, permissions: [] })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色创建失败");
+      setNewRoleName("");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色创建失败");
+    }
+  }
+
+  async function updateRole(roleId: string, patch: { name?: string; permissions?: TeamPermission[] }) {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, ...patch })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色更新失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色更新失败");
+    }
+  }
+
+  async function deleteRole(roleId: string) {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色删除失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色删除失败");
     }
   }
 
@@ -726,14 +796,15 @@ function MePage({
 
       {canManage && (
         <div className="my-section">
-          <div className="my-section-title">团队权限</div>
+          <div className="my-section-title">成员管理</div>
           <div className="task-list">
             {state.team.map((m) => {
-              const editableCreate = !canManageTeam(m);
+              const role = roleForMember(state, m);
+              const explicit = (m.permissions || []).filter((permission) => !role.permissions.includes(permission));
               return (
                 <div key={m.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
                   <div className="task-card-header">
-                    <span className="task-type">{canManageTeam(m) ? "创始人" : canCreateTask(m) ? "可派活" : "普通员工"}</span>
+                    <span className="task-type">{role.name}</span>
                     <span className="task-type">{m.feishuOpenId ? "已绑定飞书" : "未绑定"}</span>
                   </div>
                   <input
@@ -745,18 +816,77 @@ function MePage({
                     }}
                     aria-label="成员名称"
                   />
-                  <label className="risk-option" style={{ marginTop: 8 }}>
-                    <input
-                      type="checkbox"
-                      checked={canCreateTask(m)}
-                      disabled={!editableCreate}
-                      onChange={(event) => updateMember(m.id, { canCreateTasks: event.currentTarget.checked })}
-                    />
-                    允许创建任务
-                  </label>
+                  <select className="form-select" value={role.id} onChange={(event) => updateMember(m.id, { roleId: event.currentTarget.value })}>
+                    {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <div className="risk-options compact">
+                    {ALL_PERMISSIONS.map((permission) => (
+                      <label key={permission} className="risk-option">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.includes(permission) || explicit.includes(permission)}
+                          disabled={role.permissions.includes(permission)}
+                          onChange={(event) => {
+                            const next = new Set(explicit);
+                            if (event.currentTarget.checked) next.add(permission);
+                            else next.delete(permission);
+                            updateMember(m.id, { permissions: Array.from(next) });
+                          }}
+                        />
+                        {PERMISSION_LABELS[permission]}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {canManageRoles && (
+        <div className="my-section">
+          <div className="my-section-title">角色管理</div>
+          <div className="action-form" style={{ marginBottom: 10 }}>
+            <input className="form-input" placeholder="新角色名称" value={newRoleName} onChange={(event) => setNewRoleName(event.currentTarget.value)} />
+            <button className="action-btn action-primary" onClick={createRole} disabled={!newRoleName.trim()}>创建角色</button>
+          </div>
+          <div className="task-list">
+            {roles.map((role) => (
+              <div key={role.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
+                <div className="task-card-header">
+                  <span className="task-type">{role.system ? "系统角色" : "自定义角色"}</span>
+                  {!role.system && <button className="panel-icon-btn" onClick={() => deleteRole(role.id)}>删除</button>}
+                </div>
+                <input
+                  className="form-input"
+                  defaultValue={role.name}
+                  disabled={role.id === "role_founder"}
+                  onBlur={(event) => {
+                    const name = event.currentTarget.value.trim();
+                    if (name && name !== role.name) updateRole(role.id, { name });
+                  }}
+                />
+                <div className="risk-options compact">
+                  {ALL_PERMISSIONS.map((permission) => (
+                    <label key={permission} className="risk-option">
+                      <input
+                        type="checkbox"
+                        checked={role.permissions.includes(permission)}
+                        disabled={role.id === "role_founder"}
+                        onChange={(event) => {
+                          const next = new Set(role.permissions);
+                          if (event.currentTarget.checked) next.add(permission);
+                          else next.delete(permission);
+                          updateRole(role.id, { permissions: Array.from(next) });
+                        }}
+                      />
+                      {PERMISSION_LABELS[permission]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -821,7 +951,197 @@ function MePage({
   );
 }
 
+// ===== Gantt Page =====
+function GanttPage({
+  state,
+  onSelectTask
+}: {
+  state: StartupBoardState;
+  onSelectTask: (task: StartupTask) => void;
+}) {
+  const [rangeDays, setRangeDays] = useState(30);
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
+
+  const today = startOfDay(new Date());
+  const rangeStart = useMemo(() => {
+    const earliest = state.tasks.reduce<Date | null>((acc, task) => {
+      const start = taskStartDate(task);
+      return !acc || start < acc ? start : acc;
+    }, null);
+    return earliest && earliest < today ? earliest : today;
+  }, [state.tasks, today]);
+  const rangeEnd = useMemo(() => addDays(today, rangeDays), [today, rangeDays]);
+
+  const days = useMemo(() => {
+    const total = Math.max(1, daysBetween(rangeStart, rangeEnd) + 1);
+    return Array.from({ length: total }, (_, index) => addDays(rangeStart, index));
+  }, [rangeStart, rangeEnd]);
+
+  const rows = useMemo(() => {
+    return state.tasks
+      .filter((task) => task.status !== "done" || task.completedAt)
+      .filter((task) => memberFilter === "all" || task.assigneeUserId === memberFilter || task.createdByUserId === memberFilter)
+      .filter((task) => statusFilter === "all" || task.status === statusFilter)
+      .map((task) => {
+        const start = taskStartDate(task);
+        const end = taskEndDate(task);
+        const left = clampPercent((daysBetween(rangeStart, start) / Math.max(1, days.length - 1)) * 100);
+        const width = Math.max(3, clampPercent((Math.max(1, daysBetween(start, end) + 1) / Math.max(1, days.length)) * 100));
+        const assignee = state.team.find((member) => member.id === task.assigneeUserId);
+        const overdue = Boolean(task.dueAt && task.status !== "done" && new Date(task.dueAt).getTime() < Date.now());
+        return { task, start, end, left, width, assignee, overdue };
+      })
+      .sort((a, b) => a.start.getTime() - b.start.getTime() || PRIORITY_ORDER[a.task.priority] - PRIORITY_ORDER[b.task.priority]);
+  }, [state, memberFilter, statusFilter, rangeStart, days.length]);
+
+  const milestoneTasks = useMemo(() => {
+    return state.tasks
+      .filter((task) => task.dueAt && task.status !== "done")
+      .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime())
+      .slice(0, 5);
+  }, [state.tasks]);
+
+  const overloadedMembers = useMemo(() => {
+    return state.team
+      .map((member) => {
+        const active = state.tasks.filter((task) => task.assigneeUserId === member.id && ["claimed", "doing", "review"].includes(task.status)).length;
+        return { member, active };
+      })
+      .filter((item) => item.active >= item.member.maxActiveTasks);
+  }, [state]);
+
+  return (
+    <div className="gantt-page">
+      <div className="gantt-toolbar">
+        <div>
+          <h2>甘特图</h2>
+          <p>按创建、领取、开始、截止和完成时间推算任务排期。</p>
+        </div>
+        <div className="gantt-controls">
+          <select className="form-select" value={rangeDays} onChange={(event) => setRangeDays(Number(event.currentTarget.value))}>
+            <option value={14}>未来 14 天</option>
+            <option value={30}>未来 30 天</option>
+            <option value={60}>未来 60 天</option>
+            <option value={90}>未来 90 天</option>
+          </select>
+          <select className="form-select" value={memberFilter} onChange={(event) => setMemberFilter(event.currentTarget.value)}>
+            <option value="all">全部成员</option>
+            {state.team.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+          </select>
+          <select className="form-select" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as TaskStatus | "all")}>
+            <option value="all">全部状态</option>
+            {TASK_COLUMNS.map((column) => <option key={column.status} value={column.status}>{column.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="gantt-summary">
+        <div><span>{rows.length}</span><small>排期任务</small></div>
+        <div><span>{milestoneTasks.length}</span><small>近期里程碑</small></div>
+        <div><span>{overloadedMembers.length}</span><small>满载成员</small></div>
+      </div>
+
+      <div className="gantt-grid">
+        <div className="gantt-header">
+          <div className="gantt-task-head">任务</div>
+          <div className="gantt-date-head" style={{ gridTemplateColumns: `repeat(${days.length}, minmax(28px, 1fr))` }}>
+            {days.map((day) => (
+              <span key={day.toISOString()} className={isSameDay(day, today) ? "today" : ""}>
+                {day.getDate()}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {rows.length === 0 && (
+          <div className="gantt-empty">当前筛选下没有可展示的任务。</div>
+        )}
+
+        {rows.map(({ task, left, width, assignee, overdue }) => (
+          <button key={task.id} className="gantt-row" onClick={() => onSelectTask(task)}>
+            <div className="gantt-task-cell">
+              <span className={`task-priority ${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
+              <strong>{task.title}</strong>
+              <small>{assignee?.name || "未认领"} · {TASK_COLUMNS.find((column) => column.status === task.status)?.label}</small>
+            </div>
+            <div className="gantt-lane">
+              <span className={`gantt-bar ${task.status} ${overdue ? "overdue" : ""}`} style={{ left: `${left}%`, width: `${width}%` }}>
+                {task.dueAt ? new Date(task.dueAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) : "未设截止"}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="gantt-side-panels">
+        <section>
+          <h3>近期里程碑</h3>
+          {milestoneTasks.length === 0 && <p>暂无未完成截止项。</p>}
+          {milestoneTasks.map((task) => (
+            <button key={task.id} onClick={() => onSelectTask(task)}>
+              <span>{new Date(task.dueAt!).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</span>
+              <strong>{task.title}</strong>
+            </button>
+          ))}
+        </section>
+        <section>
+          <h3>容量提醒</h3>
+          {overloadedMembers.length === 0 && <p>当前无人达到 WIP 上限。</p>}
+          {overloadedMembers.map(({ member, active }) => (
+            <div key={member.id} className="capacity-item">
+              <strong>{member.name}</strong>
+              <span>{active}/{member.maxActiveTasks}</span>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  );
+}
+
 // ===== Utilities =====
+const PRIORITY_ORDER: Record<TaskPriority, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3
+};
+
+function taskStartDate(task: StartupTask): Date {
+  return startOfDay(new Date(task.startedAt || task.claimedAt || task.createdAt));
+}
+
+function taskEndDate(task: StartupTask): Date {
+  if (task.completedAt) return startOfDay(new Date(task.completedAt));
+  if (task.dueAt) return startOfDay(new Date(task.dueAt));
+  return addDays(taskStartDate(task), task.status === "pool" || task.status === "ready" ? 1 : 3);
+}
+
+function startOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function daysBetween(start: Date, end: Date): number {
+  return Math.round((startOfDay(end).getTime() - startOfDay(start).getTime()) / 86_400_000);
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function isSameDay(a: Date, b: Date): boolean {
+  return startOfDay(a).getTime() === startOfDay(b).getTime();
+}
+
 function getDropStatus(x: number, y: number): TaskStatus | undefined {
   const el = document.elementsFromPoint(x, y).find((e) => {
     return Boolean((e as HTMLElement).dataset?.dropStatus);
@@ -934,88 +1254,156 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
     return state.team.map((m) => {
       const completed = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status === "done").length;
       const active = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status !== "done" && t.status !== "pool" && t.status !== "ready").length;
-      return { ...m, completed, active };
+      const load = Math.min(100, Math.round((active / Math.max(1, m.maxActiveTasks)) * 100));
+      return { ...m, completed, active, load };
     });
   }, [state]);
 
+  const blockedCount = state.tasks.filter((t) => t.status === "blocked").length;
+  const overdueCount = state.tasks.filter((t) => t.dueAt && t.status !== "done" && new Date(t.dueAt).getTime() < now.getTime()).length;
+  const openCount = state.tasks.filter((t) => t.status !== "done").length;
+  const reviewCount = state.tasks.filter((t) => t.status === "review").length;
+  const healthScore = Math.max(0, Math.min(100, 100 - blockedCount * 12 - overdueCount * 18 - reviewCount * 4));
+  const totalCapacity = state.team.reduce((sum, member) => sum + member.maxActiveTasks, 0);
+  const activeLoad = memberStats.reduce((sum, member) => sum + member.active, 0);
+  const capacityRatio = Math.round((activeLoad / Math.max(1, totalCapacity)) * 100);
+
   return (
     <div className="stats-page">
-      {/* Streak + Cycle Time */}
-      <div className="stats-highlights">
-        <div className="highlight-card">
-          <div className="highlight-value">{streak}</div>
-          <div className="highlight-label">连续活跃天</div>
+      <div className="analytics-hero">
+        <div>
+          <h2>数据看板</h2>
+          <p>聚焦交付健康度、吞吐节奏、团队负载和近期风险。</p>
         </div>
-        <div className="highlight-card">
-          <div className="highlight-value">{cycleTime !== null ? `${cycleTime}h` : "-"}</div>
-          <div className="highlight-label">平均周期</div>
-        </div>
-        <div className="highlight-card">
-          <div className="highlight-value">{state.tasks.filter((t) => t.status === "done").length}</div>
-          <div className="highlight-label">已完成</div>
+        <div className={`health-score ${healthScore < 60 ? "danger" : healthScore < 80 ? "warning" : ""}`}>
+          <span>{healthScore}</span>
+          <small>健康度</small>
         </div>
       </div>
 
-      {/* Activity Heatmap */}
-      <div className="stats-section">
-        <div className="stats-section-title">活动热力图（12周）</div>
-        <div className="heatmap-container">
-          <div className="heatmap-grid">
-            {heatmapData.map((day, i) => (
-              <div key={i} className={`heatmap-cell level-${Math.min(4, day.count)}`}
-                title={`${day.date}: ${day.count} 次操作`}
-                style={{ gridRow: day.dayOfWeek + 1 }} />
+      <div className="analytics-kpis">
+        <div className="analytics-kpi">
+          <small>未完成</small>
+          <strong>{openCount}</strong>
+          <span>{blockedCount} 阻塞 / {overdueCount} 超期</span>
+        </div>
+        <div className="analytics-kpi">
+          <small>平均周期</small>
+          <strong>{cycleTime !== null ? `${cycleTime}h` : "-"}</strong>
+          <span>从认领到完成</span>
+        </div>
+        <div className="analytics-kpi">
+          <small>连续活跃</small>
+          <strong>{streak}</strong>
+          <span>天有操作记录</span>
+        </div>
+        <div className="analytics-kpi">
+          <small>容量使用</small>
+          <strong>{capacityRatio}%</strong>
+          <span>{activeLoad}/{totalCapacity} WIP</span>
+        </div>
+      </div>
+
+      <div className="analytics-grid">
+        <section className="analytics-card wide">
+          <div className="analytics-card-header">
+            <div>
+              <h3>活动热力图</h3>
+              <p>最近 12 周的任务操作密度</p>
+            </div>
+            <span>{heatmapData.reduce((sum, day) => sum + day.count, 0)} 次</span>
+          </div>
+          <div className="heatmap-container">
+            <div className="heatmap-grid">
+              {heatmapData.map((day, i) => (
+                <div key={i} className={`heatmap-cell level-${Math.min(4, day.count)}`}
+                  title={`${day.date}: ${day.count} 次操作`}
+                  style={{ gridRow: day.dayOfWeek + 1 }} />
+              ))}
+            </div>
+            <div className="heatmap-legend">
+              <span>少</span>
+              <div className="heatmap-cell level-0" />
+              <div className="heatmap-cell level-1" />
+              <div className="heatmap-cell level-2" />
+              <div className="heatmap-cell level-3" />
+              <div className="heatmap-cell level-4" />
+              <span>多</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>每周吞吐</h3>
+              <p>最近 4 个滚动周完成数</p>
+            </div>
+          </div>
+          <div className="throughput-chart">
+            {throughput.map((week, i) => (
+              <div key={i} className="throughput-bar-wrapper">
+                <div className="throughput-bar"
+                  style={{ height: `${(week.count / maxThroughput) * 100}%` }}>
+                  {week.count > 0 && <span>{week.count}</span>}
+                </div>
+                <div className="throughput-label">{week.label}</div>
+              </div>
             ))}
           </div>
-          <div className="heatmap-legend">
-            <span>少</span>
-            <div className="heatmap-cell level-0" />
-            <div className="heatmap-cell level-1" />
-            <div className="heatmap-cell level-2" />
-            <div className="heatmap-cell level-3" />
-            <div className="heatmap-cell level-4" />
-            <span>多</span>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>团队负载</h3>
+              <p>活跃任务与个人 WIP 上限</p>
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Throughput Bar Chart */}
-      <div className="stats-section">
-        <div className="stats-section-title">每周吞吐量</div>
-        <div className="throughput-chart">
-          {throughput.map((week, i) => (
-            <div key={i} className="throughput-bar-wrapper">
-              <div className="throughput-bar"
-                style={{ height: `${(week.count / maxThroughput) * 100}%` }}>
-                {week.count > 0 && <span>{week.count}</span>}
+          <div className="leaderboard">
+            {memberStats.map((m) => (
+              <div key={m.id} className="leaderboard-row">
+                <span className="leaderboard-avatar">{m.name[0]}</span>
+                <span className="leaderboard-name">{m.name}</span>
+                <div className="leaderboard-bars">
+                  <span className={m.load >= 100 ? "leaderboard-overload" : "leaderboard-done"} style={{ width: `${Math.max(4, m.load)}%` }} />
+                </div>
+                <span className="leaderboard-count">{m.completed} 完成 / {m.active} 进行</span>
               </div>
-              <div className="throughput-label">{week.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
+        </section>
 
-      {/* Team Leaderboard */}
-      <div className="stats-section">
-        <div className="stats-section-title">团队工作量</div>
-        <div className="leaderboard">
-          {memberStats.map((m) => (
-            <div key={m.id} className="leaderboard-row">
-              <span className="leaderboard-avatar">{m.name[0]}</span>
-              <span className="leaderboard-name">{m.name}</span>
-              <div className="leaderboard-bars">
-                <span className="leaderboard-done" style={{ width: `${Math.min(100, m.completed * 20)}%` }} />
-              </div>
-              <span className="leaderboard-count">{m.completed} 完成 / {m.active} 进行</span>
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>状态分布</h3>
+              <p>当前任务所在阶段</p>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+          <div className="status-stack">
+            {TASK_COLUMNS.map((column) => {
+              const count = state.tasks.filter((task) => task.status === column.status).length;
+              const pct = Math.round((count / Math.max(1, state.tasks.length)) * 100);
+              return (
+                <div key={column.status} className="status-stack-row">
+                  <span>{column.label}</span>
+                  <div><i style={{ width: `${Math.max(2, pct)}%` }} /></div>
+                  <strong>{count}</strong>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-      {/* Milestone Calendar */}
-      {milestones.length > 0 && (
-        <div className="stats-section">
-          <div className="stats-section-title">即将到来的里程碑</div>
+        <section className="analytics-card wide">
+          <div className="analytics-card-header">
+            <div>
+              <h3>即将到来的里程碑</h3>
+              <p>按截止时间排序的未完成任务</p>
+            </div>
+          </div>
+          {milestones.length === 0 && <div className="analytics-empty">暂无带截止时间的未完成任务。</div>}
           <div className="milestone-list">
             {milestones.map((task) => {
               const due = new Date(task.dueAt!);
@@ -1038,8 +1426,8 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
               );
             })}
           </div>
-        </div>
-      )}
+        </section>
+      </div>
     </div>
   );
 }

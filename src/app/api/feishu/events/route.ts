@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       const currentBoard = await store.read();
 
       const ensuredSender = ensureEmployeeFromFeishu(currentBoard, msgEvent.senderId);
-      if (!canCreateTask(ensuredSender.member)) {
+      if (!canCreateTask(ensuredSender.member, ensuredSender.state)) {
         await store.update(() => ensuredSender.state);
         return NextResponse.json({ ok: true, skipped: "sender_without_create_permission" });
       }

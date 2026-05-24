@@ -24,6 +24,7 @@ export function ensureEmployeeFromFeishu(
     name,
     roleLabel: "普通员工",
     feishuOpenId: openId,
+    roleId: "role_employee",
     permissions: [],
     mode: "available",
     maxActiveTasks: 2,

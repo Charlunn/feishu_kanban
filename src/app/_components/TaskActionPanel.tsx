@@ -27,11 +27,12 @@ interface TaskActionPanelProps {
   task: StartupTask;
   state: StartupBoardState;
   memberId: string;
+  canDelete: boolean;
   onClose: () => void;
   onAction: (result: { board: StartupBoardState; message: string }) => void;
 }
 
-export function TaskActionPanel({ task, state, memberId, onClose, onAction }: TaskActionPanelProps) {
+export function TaskActionPanel({ task, state, memberId, canDelete, onClose, onAction }: TaskActionPanelProps) {
   const [loading, setLoading] = useState(false);
   const [blockReason, setBlockReason] = useState(task.blockedReason || "");
   const [reviewNote, setReviewNote] = useState("");
@@ -72,6 +73,24 @@ export function TaskActionPanel({ task, state, memberId, onClose, onAction }: Ta
       onAction({ board: json.board, message: `已流转到「${TASK_COLUMNS.find((c) => c.status === targetStatus)?.label}」` });
     } catch (err) {
       onAction({ board: state, message: err instanceof Error ? err.message : "操作失败" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteTask() {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "删除失败");
+      onAction({ board: json.board, message: "任务已删除" });
+    } catch (err) {
+      onAction({ board: state, message: err instanceof Error ? err.message : "删除失败" });
     } finally {
       setLoading(false);
     }
@@ -304,6 +323,11 @@ export function TaskActionPanel({ task, state, memberId, onClose, onAction }: Ta
           {task.status === "done" && (
             <button className="action-btn action-secondary" onClick={() => doMove("doing", "重新打开任务")} disabled={loading}>
               ↩ 重新打开
+            </button>
+          )}
+          {canDelete && (
+            <button className="action-btn action-danger" onClick={deleteTask} disabled={loading}>
+              删除任务
             </button>
           )}
         </div>
