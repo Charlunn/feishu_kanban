@@ -17,11 +17,38 @@ import { demoState } from "../src/domain/seed.ts";
 import { buildBoardDigestCard, buildTaskCard } from "../src/lib/feishu/cards.ts";
 import { normalizeFeishuCardAction, resolveFeishuChallenge } from "../src/lib/feishu/events.ts";
 
-const base = JSON.parse(JSON.stringify(demoState));
+const base = {
+  ...JSON.parse(JSON.stringify(demoState)),
+  team: [
+    {
+      id: "member_founder",
+      name: "Founder",
+      roleLabel: "创始人",
+      feishuOpenId: "ou_founder_real",
+      roleId: "role_founder",
+      permissions: ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"],
+      mode: "available",
+      maxActiveTasks: 2,
+      skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+    },
+    {
+      id: "member_reviewer",
+      name: "Reviewer",
+      roleLabel: "普通员工",
+      feishuOpenId: "ou_reviewer_real",
+      roleId: "role_employee",
+      permissions: [],
+      mode: "available",
+      maxActiveTasks: 2,
+      skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+    }
+  ]
+};
 
-assert.equal(base.team.length, 3);
-assert.ok(getBoardSummary(base).total >= 6);
-assert.ok(suggestNextTaskForMember(base, "member_founder"));
+assert.equal(demoState.team.length, 0);
+assert.equal(demoState.tasks.length, 0);
+assert.equal(base.team.length, 2);
+assert.equal(getBoardSummary(base).total, 0);
 
 const created = createTask(
   base,
@@ -56,6 +83,7 @@ assert.throws(() => approveDone(review, newTask.id, "member_founder"), /require 
 const done = approveDone(review, newTask.id, review.tasks[0].reviewerUserId, "2026-05-21T04:04:00.000Z");
 assert.equal(done.tasks[0].status, "done");
 assert.ok(done.tasks[0].completedAt);
+assert.ok(suggestNextTaskForMember(created, "member_reviewer"));
 
 const blocked = blockTask(claimed, newTask.id, "member_founder", "等待飞书应用凭证", "2026-05-21T04:05:00.000Z");
 assert.equal(blocked.tasks[0].status, "blocked");

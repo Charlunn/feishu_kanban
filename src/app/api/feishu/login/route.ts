@@ -66,28 +66,63 @@ export async function POST(request: Request) {
     }
 
     const { access_token, refresh_token, expires_in, open_id, union_id, name, avatar_url } = tokenJson.data;
+    const now = new Date().toISOString();
 
     const store = getKanbanStore();
     const board = await store.update((state) => {
-      const existing = state.team.find((m) => m.feishuOpenId === open_id);
-      if (existing || !open_id) return state;
+      const demoMemberIds = new Set(
+        state.team
+          .filter((member) => member.feishuOpenId?.endsWith("_demo"))
+          .map((member) => member.id)
+      );
+      const cleanedState = {
+        ...state,
+        team: state.team.filter((member) => !demoMemberIds.has(member.id)),
+        tasks: state.tasks.filter((task) =>
+          !demoMemberIds.has(task.createdByUserId)
+          && (!task.assigneeUserId || !demoMemberIds.has(task.assigneeUserId))
+          && (!task.reviewerUserId || !demoMemberIds.has(task.reviewerUserId))
+        )
+      };
+
+      const existing = cleanedState.team.find((m) => m.feishuOpenId === open_id);
+      if (existing && open_id) {
+        return {
+          ...cleanedState,
+          team: cleanedState.team.map((member) =>
+            member.id === existing.id
+              ? {
+                  ...member,
+                  name: name || member.name,
+                  feishuUnionId: union_id || member.feishuUnionId,
+                  avatarUrl: avatar_url || member.avatarUrl,
+                  lastLoginAt: now
+                }
+              : member
+          )
+        };
+      }
+      if (!open_id) return cleanedState;
 
       const configuredOwnerOpenId = process.env.FEISHU_OWNER_OPEN_ID?.trim();
-      const founder = findFounder(state);
+      const founder = findFounder(cleanedState);
       const founderHasRealOpenId = Boolean(founder?.feishuOpenId && !founder.feishuOpenId.endsWith("_demo"));
       const shouldBecomeFounder = configuredOwnerOpenId
         ? configuredOwnerOpenId === open_id
-        : !founderHasRealOpenId;
+        : !founderHasRealOpenId && cleanedState.team.length === 0;
 
       if (shouldBecomeFounder && founder) {
         return {
-          ...state,
-          team: state.team.map((member) =>
+          ...cleanedState,
+          team: cleanedState.team.map((member) =>
             member.id === founder.id
               ? {
                   ...member,
                   name: name || member.name,
                   feishuOpenId: open_id,
+                  feishuUnionId: union_id,
+                  avatarUrl: avatar_url,
+                  lastLoginAt: now,
                   roleId: "role_founder",
                   permissions: ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"]
                 }
@@ -96,18 +131,22 @@ export async function POST(request: Request) {
         };
       }
 
+      const roleId = shouldBecomeFounder ? "role_founder" : "role_employee";
       const memberId = `member_${open_id.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 36)}`;
       return {
-        ...state,
+        ...cleanedState,
         team: [
-          ...state.team,
+          ...cleanedState.team,
           {
             id: memberId,
             name: name || "飞书成员",
-            roleLabel: "普通员工",
+            roleLabel: shouldBecomeFounder ? "创始人" : "普通员工",
             feishuOpenId: open_id,
-            roleId: "role_employee",
-            permissions: [],
+            feishuUnionId: union_id,
+            avatarUrl: avatar_url,
+            lastLoginAt: now,
+            roleId,
+            permissions: shouldBecomeFounder ? ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"] : [],
             mode: "available",
             maxActiveTasks: 2,
             skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]

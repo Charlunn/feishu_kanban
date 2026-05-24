@@ -46,6 +46,9 @@ export interface TeamMember {
   name: string;
   roleLabel: string;
   feishuOpenId: string;
+  feishuUnionId?: string;
+  avatarUrl?: string;
+  lastLoginAt?: string;
   roleId?: string;
   permissions?: TeamPermission[];
   mode: MemberMode;

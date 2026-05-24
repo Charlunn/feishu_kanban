@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamPermission } from "@/domain/models";
+import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamMember, TeamPermission } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
 import { ALL_PERMISSIONS, PERMISSION_LABELS, boardRoles, canCreateTask, canDeleteTask, canManageRoles, canManageTeam, roleForMember } from "@/domain/permissions";
 import { TaskActionPanel } from "./TaskActionPanel";
@@ -37,6 +37,18 @@ type DragState = {
   overStatus?: TaskStatus;
 };
 
+const GUEST_MEMBER: TeamMember = {
+  id: "guest",
+  name: "未登录",
+  roleLabel: "访客",
+  feishuOpenId: "",
+  roleId: "role_employee",
+  permissions: [],
+  mode: "available",
+  maxActiveTasks: 0,
+  skills: []
+};
+
 // ===== Main App Component =====
 export function KanbanApp({
   initialState,
@@ -59,7 +71,7 @@ export function KanbanApp({
   const [selectedTask, setSelectedTask] = useState<StartupTask | null>(null);
   const [inFeishuClient, setInFeishuClient] = useState(false);
 
-  const activeMember = state.team.find((m) => m.id === memberId) || state.team[0];
+  const activeMember = state.team.find((m) => m.id === memberId) || state.team[0] || GUEST_MEMBER;
   const mayCreateTask = activeMember ? canCreateTask(activeMember, state) : false;
   const mayManageTeam = activeMember ? canManageTeam(activeMember, state) : false;
   const mayManageRoles = activeMember ? canManageRoles(activeMember, state) : false;
@@ -703,7 +715,7 @@ function MePage({
   onError: (message: string) => void;
   onLogin: () => void;
 }) {
-  const member = state.team.find((m) => m.id === memberId) || state.team[0];
+  const member = state.team.find((m) => m.id === memberId) || state.team[0] || GUEST_MEMBER;
   const myTasks = state.tasks.filter(
     (t) => t.assigneeUserId === memberId && t.status !== "done"
   );
@@ -1078,14 +1090,15 @@ function AdminPage({
               {state.team.map((m) => {
                 const role = roleForMember(state, m);
                 const explicit = (m.permissions || []).filter((permission) => !role.permissions.includes(permission));
-                const isDemo = m.feishuOpenId.endsWith("_demo");
                 return (
-                  <div key={m.id} className={`admin-user-card ${isDemo ? "demo" : ""}`}>
+                  <div key={m.id} className="admin-user-card">
                     <div className="admin-user-head">
-                      <span className="leaderboard-avatar">{m.name[0]}</span>
+                      {m.avatarUrl ? <img className="admin-user-avatar" src={m.avatarUrl} alt="" /> : <span className="leaderboard-avatar">{m.name[0]}</span>}
                       <div>
                         <strong>{m.name}</strong>
-                        <small>{isDemo ? "种子演示账号" : m.feishuOpenId || "未绑定飞书"}</small>
+                        <small>Open ID: {m.feishuOpenId || "未绑定"}</small>
+                        {m.feishuUnionId && <small>Union ID: {m.feishuUnionId}</small>}
+                        {m.lastLoginAt && <small>最后登录: {new Date(m.lastLoginAt).toLocaleString("zh-CN")}</small>}
                       </div>
                       <span className="task-type">{role.name}</span>
                     </div>
