@@ -6,6 +6,13 @@ import { ALL_PERMISSIONS, DEFAULT_ROLES, memberPermissions } from "@/domain/perm
 
 const FEISHU_BASE_URL = "https://open.feishu.cn/open-apis";
 
+type FeishuLoginProfile = {
+  open_id?: string;
+  union_id?: string;
+  name?: string;
+  avatar_url?: string;
+};
+
 function memberIdFromOpenId(openId: string): string {
   return `member_${openId.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 36)}`;
 }
@@ -41,6 +48,35 @@ function shouldGrantFounder(state: StartupBoardState, openId: string): boolean {
     hasRealFeishuAccount(member) && memberPermissions(member, state).includes("manage_team")
   );
   return !hasFounderOrAdmin && !state.team.some(hasRealFeishuAccount);
+}
+
+async function getUserInfo(accessToken: string): Promise<FeishuLoginProfile> {
+  const response = await fetch(`${FEISHU_BASE_URL}/authen/v1/user_info`, {
+    headers: {
+      authorization: `Bearer ${accessToken}`
+    }
+  });
+  const json = (await response.json()) as {
+    code?: number;
+    msg?: string;
+    data?: FeishuLoginProfile & {
+      sub?: string;
+      avatar_thumb?: string;
+      avatar_middle?: string;
+      avatar_big?: string;
+    };
+  };
+
+  if (!response.ok || json.code !== 0 || !json.data) {
+    throw new Error(`获取飞书用户信息失败: ${json.msg || response.statusText}`);
+  }
+
+  return {
+    open_id: json.data.open_id || json.data.sub,
+    union_id: json.data.union_id,
+    name: json.data.name,
+    avatar_url: json.data.avatar_url || json.data.avatar_middle || json.data.avatar_thumb || json.data.avatar_big
+  };
 }
 
 export async function POST(request: Request) {
@@ -92,10 +128,23 @@ export async function POST(request: Request) {
       }, { status: 401 });
     }
 
-    const { access_token, refresh_token, expires_in, open_id, union_id, name, avatar_url } = tokenJson.data;
+    const { access_token, refresh_token, expires_in } = tokenJson.data;
+    let open_id = tokenJson.data.open_id;
+    let union_id = tokenJson.data.union_id;
+    let name = tokenJson.data.name;
+    let avatar_url = tokenJson.data.avatar_url;
+
+    if (!open_id) {
+      const userInfo = await getUserInfo(access_token);
+      open_id = userInfo.open_id;
+      union_id = union_id || userInfo.union_id;
+      name = name || userInfo.name;
+      avatar_url = avatar_url || userInfo.avatar_url;
+    }
+
     if (!open_id) {
       return NextResponse.json({
-        error: "飞书登录成功，但飞书没有返回 open_id",
+        error: "飞书登录成功，但无法从飞书用户信息中获取 open_id",
         fallback: true
       }, { status: 401 });
     }
