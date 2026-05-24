@@ -22,7 +22,7 @@ const RISK_LABEL: Record<string, string> = {
   quote_scope: "报价", sensitive_data: "敏感", ops_only: "内部"
 };
 
-type Tab = "board" | "gantt" | "create" | "stats" | "me";
+type Tab = "board" | "gantt" | "create" | "stats" | "admin" | "me";
 
 type DragState = {
   taskId: string;
@@ -114,6 +114,7 @@ export function KanbanApp({
       gantt: "甘特图",
       create: "派活",
       stats: "数据统计",
+      admin: "管理",
       me: "我的"
     };
     setNavTitle(tabNames[tab]);
@@ -237,6 +238,12 @@ export function KanbanApp({
           <svg viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16l4-4 4 4 5-5" /></svg>
           <span>数据</span>
         </button>
+        {(mayManageTeam || mayManageRoles) && (
+          <button className={`sidebar-item ${tab === "admin" ? "active" : ""}`} onClick={() => setTab("admin")}>
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M5 8h14M7 16h10" /></svg>
+            <span>管理</span>
+          </button>
+        )}
         <div className="sidebar-spacer" />
         <button className={`sidebar-item ${tab === "me" ? "active" : ""}`} onClick={() => setTab("me")}>
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" /></svg>
@@ -249,7 +256,7 @@ export function KanbanApp({
         {/* Desktop Header */}
         <header className="desktop-header">
           <span className="desktop-header-title">
-            {tab === "board" ? "任务看板" : tab === "gantt" ? "甘特图" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : "我的"}
+            {tab === "board" ? "任务看板" : tab === "gantt" ? "甘特图" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : tab === "admin" ? "管理后台" : "我的"}
           </span>
           <span className={session || inFeishuClient || feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
             {connectionLabel}
@@ -313,6 +320,16 @@ export function KanbanApp({
         {tab === "stats" && (
           <StatsPage state={state} memberId={memberId} />
         )}
+        {tab === "admin" && (mayManageTeam || mayManageRoles) && (
+          <AdminPage
+            state={state}
+            memberId={memberId}
+            canManage={mayManageTeam}
+            canManageRoles={mayManageRoles}
+            onTeamUpdated={setState}
+            onError={showToast}
+          />
+        )}
 
         {/* Floating drag card */}
         {drag?.active && (
@@ -375,6 +392,12 @@ export function KanbanApp({
           <svg viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16l4-4 4 4 5-5" /></svg>
           <span>数据</span>
         </button>
+        {(mayManageTeam || mayManageRoles) && (
+          <button className={`nav-item ${tab === "admin" ? "active" : ""}`} onClick={() => setTab("admin")}>
+            <svg viewBox="0 0 24 24"><path d="M12 3v18M5 8h14M7 16h10" /></svg>
+            <span>管理</span>
+          </button>
+        )}
         <button className={`nav-item ${tab === "me" ? "active" : ""}`} onClick={() => setTab("me")}>
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" /></svg>
           <span>我的</span>
@@ -795,7 +818,7 @@ function MePage({
       </div>
 
       {canManage && (
-        <div className="my-section">
+        <div className="my-section" style={{ display: "none" }}>
           <div className="my-section-title">成员管理</div>
           <div className="task-list">
             {state.team.map((m) => {
@@ -845,7 +868,7 @@ function MePage({
       )}
 
       {canManageRoles && (
-        <div className="my-section">
+        <div className="my-section" style={{ display: "none" }}>
           <div className="my-section-title">角色管理</div>
           <div className="action-form" style={{ marginBottom: 10 }}>
             <input className="form-input" placeholder="新角色名称" value={newRoleName} onChange={(event) => setNewRoleName(event.currentTarget.value)} />
@@ -946,6 +969,219 @@ function MePage({
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Admin Page =====
+function AdminPage({
+  state,
+  memberId,
+  canManage,
+  canManageRoles,
+  onTeamUpdated,
+  onError
+}: {
+  state: StartupBoardState;
+  memberId: string;
+  canManage: boolean;
+  canManageRoles: boolean;
+  onTeamUpdated: (state: StartupBoardState) => void;
+  onError: (message: string) => void;
+}) {
+  const roles = boardRoles(state);
+  const [newRoleName, setNewRoleName] = useState("");
+
+  async function updateMember(targetId: string, patch: { name?: string; roleId?: string; permissions?: TeamPermission[] }) {
+    try {
+      const res = await fetch(`/api/team/${targetId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, ...patch })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "成员更新失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "成员更新失败");
+    }
+  }
+
+  async function createRole() {
+    const name = newRoleName.trim();
+    if (!name) return;
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, name, permissions: [] })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色创建失败");
+      setNewRoleName("");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色创建失败");
+    }
+  }
+
+  async function updateRole(roleId: string, patch: { name?: string; permissions?: TeamPermission[] }) {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, ...patch })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色更新失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色更新失败");
+    }
+  }
+
+  async function deleteRole(roleId: string) {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "角色删除失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "角色删除失败");
+    }
+  }
+
+  return (
+    <div className="admin-page">
+      <div className="analytics-hero">
+        <div>
+          <h2>管理后台</h2>
+          <p>管理用户、角色和权限。用户随飞书账号自动加入，不限制人数。</p>
+        </div>
+      </div>
+
+      <div className="admin-grid">
+        {canManage && (
+          <section className="analytics-card wide">
+            <div className="analytics-card-header">
+              <div>
+                <h3>用户管理</h3>
+                <p>{state.team.length} 个账号，权限跟随账号而不是角色统计口径。</p>
+              </div>
+            </div>
+            <div className="admin-user-list">
+              {state.team.map((m) => {
+                const role = roleForMember(state, m);
+                const explicit = (m.permissions || []).filter((permission) => !role.permissions.includes(permission));
+                const isDemo = m.feishuOpenId.endsWith("_demo");
+                return (
+                  <div key={m.id} className={`admin-user-card ${isDemo ? "demo" : ""}`}>
+                    <div className="admin-user-head">
+                      <span className="leaderboard-avatar">{m.name[0]}</span>
+                      <div>
+                        <strong>{m.name}</strong>
+                        <small>{isDemo ? "种子演示账号" : m.feishuOpenId || "未绑定飞书"}</small>
+                      </div>
+                      <span className="task-type">{role.name}</span>
+                    </div>
+                    <div className="admin-user-controls">
+                      <input
+                        className="form-input"
+                        defaultValue={m.name}
+                        onBlur={(event) => {
+                          const name = event.currentTarget.value.trim();
+                          if (name && name !== m.name) updateMember(m.id, { name });
+                        }}
+                        aria-label="成员名称"
+                      />
+                      <select className="form-select" value={role.id} onChange={(event) => updateMember(m.id, { roleId: event.currentTarget.value })}>
+                        {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="risk-options compact">
+                      {ALL_PERMISSIONS.map((permission) => (
+                        <label key={permission} className="risk-option">
+                          <input
+                            type="checkbox"
+                            checked={role.permissions.includes(permission) || explicit.includes(permission)}
+                            disabled={role.permissions.includes(permission)}
+                            onChange={(event) => {
+                              const next = new Set(explicit);
+                              if (event.currentTarget.checked) next.add(permission);
+                              else next.delete(permission);
+                              updateMember(m.id, { permissions: Array.from(next) });
+                            }}
+                          />
+                          {PERMISSION_LABELS[permission]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {canManageRoles && (
+          <section className="analytics-card">
+            <div className="analytics-card-header">
+              <div>
+                <h3>角色管理</h3>
+                <p>创建角色并定义默认权限，再分配给用户。</p>
+              </div>
+            </div>
+            <div className="action-form" style={{ marginBottom: 12 }}>
+              <input className="form-input" placeholder="新角色名称" value={newRoleName} onChange={(event) => setNewRoleName(event.currentTarget.value)} />
+              <button className="action-btn action-primary" onClick={createRole} disabled={!newRoleName.trim()}>创建角色</button>
+            </div>
+            <div className="admin-role-list">
+              {roles.map((role) => (
+                <div key={role.id} className="admin-role-card">
+                  <div className="admin-user-head">
+                    <div>
+                      <strong>{role.name}</strong>
+                      <small>{role.system ? "系统角色" : "自定义角色"}</small>
+                    </div>
+                    {!role.system && <button className="panel-icon-btn" onClick={() => deleteRole(role.id)}>删除</button>}
+                  </div>
+                  <input
+                    className="form-input"
+                    defaultValue={role.name}
+                    disabled={role.id === "role_founder"}
+                    onBlur={(event) => {
+                      const name = event.currentTarget.value.trim();
+                      if (name && name !== role.name) updateRole(role.id, { name });
+                    }}
+                  />
+                  <div className="risk-options compact">
+                    {ALL_PERMISSIONS.map((permission) => (
+                      <label key={permission} className="risk-option">
+                        <input
+                          type="checkbox"
+                          checked={role.permissions.includes(permission)}
+                          disabled={role.id === "role_founder"}
+                          onChange={(event) => {
+                            const next = new Set(role.permissions);
+                            if (event.currentTarget.checked) next.add(permission);
+                            else next.delete(permission);
+                            updateRole(role.id, { permissions: Array.from(next) });
+                          }}
+                        />
+                        {PERMISSION_LABELS[permission]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -1250,21 +1486,25 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
   }, [state.tasks]);
 
   // Per-member stats
+  const accountMembers = useMemo(() => {
+    return state.team.filter((m) => m.feishuOpenId && !m.feishuOpenId.endsWith("_demo"));
+  }, [state.team]);
+
   const memberStats = useMemo(() => {
-    return state.team.map((m) => {
+    return accountMembers.map((m) => {
       const completed = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status === "done").length;
       const active = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status !== "done" && t.status !== "pool" && t.status !== "ready").length;
       const load = Math.min(100, Math.round((active / Math.max(1, m.maxActiveTasks)) * 100));
       return { ...m, completed, active, load };
     });
-  }, [state]);
+  }, [state.tasks, accountMembers]);
 
   const blockedCount = state.tasks.filter((t) => t.status === "blocked").length;
   const overdueCount = state.tasks.filter((t) => t.dueAt && t.status !== "done" && new Date(t.dueAt).getTime() < now.getTime()).length;
   const openCount = state.tasks.filter((t) => t.status !== "done").length;
   const reviewCount = state.tasks.filter((t) => t.status === "review").length;
   const healthScore = Math.max(0, Math.min(100, 100 - blockedCount * 12 - overdueCount * 18 - reviewCount * 4));
-  const totalCapacity = state.team.reduce((sum, member) => sum + member.maxActiveTasks, 0);
+  const totalCapacity = accountMembers.reduce((sum, member) => sum + member.maxActiveTasks, 0);
   const activeLoad = memberStats.reduce((sum, member) => sum + member.active, 0);
   const capacityRatio = Math.round((activeLoad / Math.max(1, totalCapacity)) * 100);
 
@@ -1357,10 +1597,11 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
           <div className="analytics-card-header">
             <div>
               <h3>团队负载</h3>
-              <p>活跃任务与个人 WIP 上限</p>
+              <p>按真实飞书账号统计，不按角色汇总</p>
             </div>
           </div>
           <div className="leaderboard">
+            {memberStats.length === 0 && <div className="analytics-empty">暂无真实飞书账号数据。</div>}
             {memberStats.map((m) => (
               <div key={m.id} className="leaderboard-row">
                 <span className="leaderboard-avatar">{m.name[0]}</span>
