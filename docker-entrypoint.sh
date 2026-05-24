@@ -5,6 +5,11 @@
 set -e
 
 DB_PASS=$(cat /run/secrets/db_password | tr -d '[:space:]')
-export DATABASE_URL="postgresql://kanban:${DB_PASS}@postgres/kanban?sslmode=disable"
+DB_HOST=${DB_HOST:-postgresql}
+DB_PORT=${DB_PORT:-5432}
+DB_NAME=${DB_NAME:-kanban}
+DB_USER=${DB_USER:-kanban}
+
+export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"
 
 exec npx next start --port 3015
