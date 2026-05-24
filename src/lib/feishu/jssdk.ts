@@ -111,8 +111,17 @@ interface TtSDK {
 }
 
 declare global {
-  interface Window { tt?: TtSDK; }
+  interface Window {
+    tt?: TtSDK;
+    h5sdk?: {
+      ready(callback: () => void): void;
+      error?(callback: (error: unknown) => void): void;
+    };
+  }
 }
+
+const FEISHU_JSSDK_URL = "https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.26.js";
+let sdkLoadPromise: Promise<void> | null = null;
 
 function tt(): TtSDK | null {
   if (typeof window === "undefined") return null;
@@ -123,6 +132,76 @@ export function isInFeishu(): boolean {
   if (typeof window === "undefined") return false;
   const ua = navigator.userAgent.toLowerCase();
   return ua.includes("lark") || ua.includes("feishu");
+}
+
+export function ensureFeishuJssdk(timeoutMs = 6000): Promise<void> {
+  if (typeof window === "undefined") return Promise.reject(new Error("Window is unavailable."));
+  if (window.tt?.requestAuthCode && window.h5sdk?.ready) return Promise.resolve();
+  if (sdkLoadPromise) return sdkLoadPromise;
+
+  sdkLoadPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-feishu-jssdk="true"]');
+    const script = existing ?? document.createElement("script");
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      sdkLoadPromise = null;
+      reject(new Error("Feishu JSSDK failed to load."));
+    };
+
+    const timer = window.setTimeout(() => {
+      if (window.tt?.requestAuthCode && window.h5sdk?.ready) finish();
+      else fail();
+    }, timeoutMs);
+
+    const onLoaded = () => {
+      window.clearTimeout(timer);
+      if (window.tt?.requestAuthCode && window.h5sdk?.ready) finish();
+      else fail();
+    };
+
+    script.addEventListener("load", onLoaded, { once: true });
+    script.addEventListener("error", () => {
+      window.clearTimeout(timer);
+      fail();
+    }, { once: true });
+
+    if (!existing) {
+      script.src = FEISHU_JSSDK_URL;
+      script.async = true;
+      script.dataset.feishuJssdk = "true";
+      document.head.appendChild(script);
+    }
+  });
+
+  return sdkLoadPromise;
+}
+
+export function requestFeishuAuthCode(appId: string): Promise<string> {
+  return ensureFeishuJssdk().then(() => new Promise((resolve, reject) => {
+    const sdk = window.h5sdk;
+    const ttSdk = window.tt;
+    if (!sdk || !ttSdk?.requestAuthCode) {
+      reject(new Error("Feishu JSSDK is unavailable."));
+      return;
+    }
+
+    sdk.error?.((error) => reject(error));
+    sdk.ready(() => {
+      ttSdk.requestAuthCode({
+        appId,
+        success: (res) => resolve(res.code),
+        fail: (error) => reject(error)
+      });
+    });
+  }));
 }
 
 // ===== Navigation Bar =====

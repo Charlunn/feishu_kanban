@@ -2,14 +2,20 @@ import { NextResponse } from "next/server";
 import {
   resolveFeishuChallenge,
   decryptFeishuEvent,
+  buildCardActionToast,
+  isFeishuCardActionPayload,
   normalizeMessageEvent,
+  normalizeFeishuCardAction,
   isEventAlreadyProcessed,
   markEventProcessed
 } from "@/lib/feishu/events";
 import { getKanbanStore } from "@/lib/store";
-import { createTask, approveDone } from "@/domain/operations";
-import { buildAtReplyCard } from "@/lib/feishu/cards";
-import { sendInteractiveCard, isFeishuConfigured } from "@/lib/feishu/client";
+import { createTask, approveDone, moveTaskByAction } from "@/domain/operations";
+import { buildAtReplyCard, buildTaskCard } from "@/lib/feishu/cards";
+import { sendInteractiveCard, isFeishuConfigured, patchInteractiveCard } from "@/lib/feishu/client";
+import { memberOrFallbackFromFeishu } from "@/lib/feishu/identity";
+
+const WEBAPPURL = process.env.NEXT_PUBLIC_APP_BASE_URL || "http://localhost:3015";
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +35,42 @@ export async function POST(request: Request) {
     // ===== Challenge verification =====
     const challenge = resolveFeishuChallenge(body);
     if (challenge) return NextResponse.json(challenge);
+
+    // ===== Handle card action callbacks when Feishu uses one shared callback URL =====
+    if (isFeishuCardActionPayload(body)) {
+      const normalized = normalizeFeishuCardAction(body);
+      const note = normalized.blockReason || normalized.note;
+
+      const store = getKanbanStore();
+      const current = await store.read();
+      const member = normalized.memberId
+        ? (current.team.find((m) => m.id === normalized.memberId) ?? memberOrFallbackFromFeishu(current, normalized.openId))
+        : memberOrFallbackFromFeishu(current, normalized.openId);
+
+      const board = await store.update((state) =>
+        moveTaskByAction(state, normalized.taskId, member.id, normalized.action, note)
+      );
+
+      const updatedTask = board.tasks.find((t) => t.id === normalized.taskId);
+      if (updatedTask?.feishu.messageId) {
+        try {
+          const updatedCard = buildTaskCard(updatedTask, WEBAPPURL);
+          await patchInteractiveCard(updatedTask.feishu.messageId, updatedCard);
+        } catch {
+          // Card patch failure is non-critical; do not reject the action callback.
+        }
+      }
+
+      const statusMsg = normalized.action === "block_task"
+        ? "已标记阻塞"
+        : normalized.action === "approve_done"
+          ? "复核通过，任务已完成"
+          : normalized.action === "claim_task"
+            ? "已认领任务"
+            : "任务状态已更新";
+
+      return NextResponse.json(buildCardActionToast(statusMsg));
+    }
 
     // ===== Event deduplication =====
     const b = body as Record<string, unknown>;

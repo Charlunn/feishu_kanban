@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
 import { TaskActionPanel } from "./TaskActionPanel";
-import { setNavTitle, setNavFeishuBlue, isInFeishu } from "@/lib/feishu/jssdk";
+import { setNavTitle, setNavFeishuBlue, isInFeishu, requestFeishuAuthCode } from "@/lib/feishu/jssdk";
 
 // ===== Constants =====
 const PRIORITY_LABEL: Record<TaskPriority, string> = {
@@ -113,43 +113,29 @@ export function KanbanApp({
   async function attemptFeishuLogin() {
     setLoginLoading(true);
     try {
-      // In Feishu webview, use tt.requestAuthCode (JSSDK)
-      const w = window as unknown as {
-        tt?: { requestAuthCode?: (opts: { appId: string; success: (res: { code: string }) => void; fail: (err: unknown) => void }) => void }
-      };
-      if (!w.tt?.requestAuthCode) {
-        showToast("飞书 JSSDK 未加载，使用手动选择身份");
-        setLoginLoading(false);
-        return;
-      }
       const appId = document.querySelector<HTMLMetaElement>('meta[name="feishu-app-id"]')?.content || "";
       if (!appId) {
-        setLoginLoading(false);
+        showToast("飞书应用 App ID 未配置");
         return;
       }
-      w.tt.requestAuthCode({
-        appId,
-        success: async (res) => {
-          try {
-            const resp = await fetch("/api/feishu/login", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ code: res.code })
-            });
-            const json = await resp.json();
-            if (resp.ok && json.session) {
-              setSession(json.session);
-              setMemberId(json.session.memberId);
-              showToast(`欢迎回来，${json.session.name}`);
-            } else {
-              showToast(json.error || "登录失败，使用手动选择");
-            }
-          } catch { showToast("登录请求失败"); }
-          setLoginLoading(false);
-        },
-        fail: () => { setLoginLoading(false); }
+
+      const code = await requestFeishuAuthCode(appId);
+      const resp = await fetch("/api/feishu/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code })
       });
+      const json = await resp.json();
+      if (resp.ok && json.session) {
+        setSession(json.session);
+        setMemberId(json.session.memberId);
+        showToast(`欢迎回来，${json.session.name}`);
+      } else {
+        showToast(json.error || "登录失败，使用手动选择");
+      }
     } catch {
+      showToast("飞书登录异常，使用手动选择身份");
+    } finally {
       setLoginLoading(false);
     }
   }

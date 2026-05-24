@@ -38,7 +38,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           - tt.chooseImage (image/file picker)
         */}
         <script
-          src="https://lf-cdn.feishu.cn/obj/feishu-static/lark/tt-jsapi/tt_jsapi.2.18.0.js"
+          src="https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.26.js"
+          data-feishu-jssdk="true"
           async
         />
       </head>

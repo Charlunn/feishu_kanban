@@ -96,6 +96,12 @@ export function normalizeFeishuCardAction(body: unknown): NormalizedFeishuCardAc
   };
 }
 
+export function isFeishuCardActionPayload(body: unknown): boolean {
+  const parsed = feishuCardActionSchema.safeParse(body);
+  const value = parsed.success ? parsed.data.action?.value : undefined;
+  return Boolean(value?.taskId && value?.action);
+}
+
 // ===== Normalize message event =====
 // Handles im.message.receive_v1 events
 export function normalizeMessageEvent(body: unknown): FeishuMessageEvent | null {
