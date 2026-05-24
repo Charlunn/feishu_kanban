@@ -42,11 +42,7 @@ services:
       - DB_NAME=kanban
       - DB_USER=kanban
     secrets:
-      - source: db_password
-        target: db_password
-        uid: "1001"
-        gid: "1001"
-        mode: 0400
+      - db_password
     volumes:
       - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
