@@ -18,6 +18,7 @@
  */
 
 import { Pool } from "pg";
+import { readFileSync } from "fs";
 import { demoState } from "@/domain/seed";
 import type { StartupBoardState } from "@/domain/models";
 
@@ -25,8 +26,32 @@ import type { StartupBoardState } from "@/domain/models";
 // Singleton pattern safe for Next.js hot-reload
 const globalForPg = globalThis as typeof globalThis & { __pgPool?: Pool };
 
+function getDatabaseUrl(): string | null {
+  const configured = process.env.DATABASE_URL?.trim();
+  if (configured && !configured.includes("undefined") && !configured.match(/^postgres(?:ql)?:\/\/[^:@]+:@/)) {
+    return configured;
+  }
+
+  const passwordFile = process.env.DB_PASSWORD_FILE || "/run/secrets/db_password";
+  let password = process.env.DB_PASSWORD?.trim() || "";
+  if (!password) {
+    try {
+      password = readFileSync(passwordFile, "utf8").trim();
+    } catch {
+      password = "";
+    }
+  }
+  if (!password) return null;
+
+  const host = process.env.DB_HOST || "postgresql";
+  const port = process.env.DB_PORT || "5432";
+  const name = process.env.DB_NAME || "kanban";
+  const user = process.env.DB_USER || "kanban";
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${name}?sslmode=disable`;
+}
+
 function getPool(): Pool | null {
-  const url = process.env.DATABASE_URL;
+  const url = getDatabaseUrl();
   if (!url) return null;
 
   if (!globalForPg.__pgPool) {
