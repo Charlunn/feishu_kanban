@@ -1,0 +1,26 @@
+{
+  "name": "feishu-startup-kanban",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+    "test": "node tests/node-runner.mjs"
+  },
+  "dependencies": {
+    "next": "latest",
+    "pg": "^8.13.3",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pg": "^8.11.11",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}

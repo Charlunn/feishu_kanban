@@ -1,0 +1,134 @@
+version: "3.8"
+
+services:
+  # ===== PostgreSQL 数据库 =====
+  postgres:
+    image: postgres:16-alpine
+    container_name: feishu-kanban-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kanban
+      POSTGRES_USER: kanban
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets:
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - kanban-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kanban -d kanban"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===== Next.js 应用 =====
+  kanban:
+    build: .
+    container_name: feishu-kanban
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+    secrets:
+      - db_password
+    volumes:
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    expose:
+      - "3015"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kanban-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3015"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ===== Nginx 反向代理 =====
+  nginx:
+    image: nginx:alpine
+    container_name: feishu-kanban-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      kanban:
+        condition: service_healthy
+    networks:
+      - kanban-net
+
+  # ===== 定时任务 =====
+  cron:
+    image: alpine:latest
+    container_name: feishu-kanban-cron
+    restart: unless-stopped
+    depends_on:
+      kanban:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "0 * * * * wget -qO- http://kanban:3015/api/feishu/reminders >> /var/log/reminders.log 2>&1" > /etc/crontabs/root
+        echo "0 9 * * * wget -qO- http://kanban:3015/api/feishu/push-digest >> /var/log/digest.log 2>&1" >> /etc/crontabs/root
+        crond -f -l 2
+    networks:
+      - kanban-net
+
+  # ===== 数据库备份（每天凌晨 3 点） =====
+  backup:
+    image: postgres:16-alpine
+    container_name: feishu-kanban-backup
+    restart: unless-stopped
+    secrets:
+      - db_password
+    volumes:
+      - ./backups:/backups
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        while true; do
+          # 等到凌晨 3 点（实现简单，不引入 cron）
+          sleep 3600
+          HOUR=$(date +%H)
+          if [ "$$HOUR" = "03" ]; then
+            DB_PASS=$(cat /run/secrets/db_password | tr -d '[:space:]')
+            PGPASSWORD="$$DB_PASS" pg_dump \
+              -h postgres -U kanban kanban \
+              -F c -f /backups/kanban_$(date +%Y%m%d_%H%M).dump && \
+              echo "[backup] done at $(date)"
+            # 只保留最近 7 天
+            find /backups -name "*.dump" -mtime +7 -delete
+          fi
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - kanban-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  kanban-net:
+    driver: bridge
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt

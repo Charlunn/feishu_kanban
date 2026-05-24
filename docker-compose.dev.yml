@@ -1,0 +1,21 @@
+# 本地开发/测试用，不需要 SSL 证书
+# 使用方法: docker compose -f docker-compose.dev.yml up -d --build
+
+version: "3.8"
+
+services:
+  kanban:
+    build: .
+    container_name: feishu-kanban-dev
+    restart: unless-stopped
+    ports:
+      - "3015:3015"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3015"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

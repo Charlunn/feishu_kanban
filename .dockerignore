@@ -1,0 +1,10 @@
+node_modules
+.next
+.env.local
+.env
+nginx/ssl/*.pem
+nginx/ssl/*.key
+secrets/db_password.txt
+backups/
+*.log
+.git
