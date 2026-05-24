@@ -108,13 +108,13 @@ services:
         while true; do
           # 等到凌晨 3 点（实现简单，不引入 cron）
           sleep 3600
-          HOUR=$(date +%H)
+          HOUR=$$(date +%H)
           if [ "$$HOUR" = "03" ]; then
-            DB_PASS=$(cat /run/secrets/db_password | tr -d '[:space:]')
+            DB_PASS=$$(cat /run/secrets/db_password | tr -d '[:space:]')
             PGPASSWORD="$$DB_PASS" pg_dump \
               -h postgresql -U kanban kanban \
-              -F c -f /backups/kanban_$(date +%Y%m%d_%H%M).dump && \
-              echo "[backup] done at $(date)"
+              -F c -f /backups/kanban_$$(date +%Y%m%d_%H%M).dump && \
+              echo "[backup] done at $$(date)"
             # 只保留最近 7 天
             find /backups -name "*.dump" -mtime +7 -delete
           fi
