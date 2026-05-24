@@ -131,6 +131,30 @@ export async function POST(request: Request) {
         };
       }
 
+      if (shouldBecomeFounder) {
+        const memberId = `member_${open_id.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 36)}`;
+        return {
+          ...cleanedState,
+          team: [
+            ...cleanedState.team,
+            {
+              id: memberId,
+              name: name || "飞书成员",
+              roleLabel: "创始人",
+              feishuOpenId: open_id,
+              feishuUnionId: union_id,
+              avatarUrl: avatar_url,
+              lastLoginAt: now,
+              roleId: "role_founder",
+              permissions: ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"],
+              mode: "available",
+              maxActiveTasks: 2,
+              skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+            }
+          ]
+        };
+      }
+
       const roleId = shouldBecomeFounder ? "role_founder" : "role_employee";
       const memberId = `member_${open_id.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 36)}`;
       return {
@@ -155,7 +179,13 @@ export async function POST(request: Request) {
       };
     });
 
-    const member = board.team.find((m) => m.feishuOpenId === open_id) || board.team[0];
+    const member = board.team.find((m) => m.feishuOpenId === open_id);
+    if (!member) {
+      return NextResponse.json({
+        error: "飞书账号登录成功，但用户档案写入失败，请刷新后重试。",
+        fallback: true
+      }, { status: 500 });
+    }
 
     const session: FeishuUserSession = {
       openId: open_id || "",

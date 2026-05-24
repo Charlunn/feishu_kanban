@@ -379,7 +379,9 @@ function selectReviewer(state: StartupBoardState, task: StartupTask): TeamMember
   const candidates = state.team
     .filter((member) => member.id !== task.assigneeUserId && member.mode !== "away")
     .sort((a, b) => (activeByMember.get(a.id) || 0) - (activeByMember.get(b.id) || 0));
-  return candidates[0] || state.team.find((member) => member.id !== task.assigneeUserId) || state.team[0];
+  const reviewer = candidates[0] || state.team.find((member) => member.id !== task.assigneeUserId) || state.team[0];
+  if (!reviewer) throw new Error("No team member is available to review this task.");
+  return reviewer;
 }
 
 function appendAudit(
