@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
+import { canCreateTask, canManageTeam } from "@/domain/permissions";
 import { TaskActionPanel } from "./TaskActionPanel";
 import { setNavTitle, setNavFeishuBlue, isInFeishu, requestFeishuAuthCode } from "@/lib/feishu/jssdk";
 
@@ -58,6 +59,8 @@ export function KanbanApp({
   const [selectedTask, setSelectedTask] = useState<StartupTask | null>(null);
 
   const activeMember = state.team.find((m) => m.id === memberId) || state.team[0];
+  const mayCreateTask = activeMember ? canCreateTask(activeMember) : false;
+  const mayManageTeam = activeMember ? canManageTeam(activeMember) : false;
 
   const columns = useMemo(() => {
     const grouped: Record<TaskStatus, StartupTask[]> = {
@@ -110,6 +113,10 @@ export function KanbanApp({
     setNavTitle(tabNames[tab]);
   }, [tab, summary.waitingReview, overdueCount]);
 
+  useEffect(() => {
+    if (tab === "create" && !mayCreateTask) setTab("board");
+  }, [tab, mayCreateTask]);
+
   async function attemptFeishuLogin() {
     setLoginLoading(true);
     try {
@@ -129,6 +136,7 @@ export function KanbanApp({
       if (resp.ok && json.session) {
         setSession(json.session);
         setMemberId(json.session.memberId);
+        if (json.board) setState(json.board);
         showToast(`欢迎回来，${json.session.name}`);
       } else {
         showToast(json.error || "登录失败，使用手动选择");
@@ -209,10 +217,12 @@ export function KanbanApp({
           <span>看板</span>
           {(summary.waitingReview + overdueCount) > 0 && <span className="sidebar-badge">{summary.waitingReview + overdueCount}</span>}
         </button>
-        <button className={`sidebar-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
-          <span>派活</span>
-        </button>
+        {mayCreateTask && (
+          <button className={`sidebar-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+            <span>派活</span>
+          </button>
+        )}
         <button className={`sidebar-item ${tab === "stats" ? "active" : ""}`} onClick={() => setTab("stats")}>
           <svg viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16l4-4 4 4 5-5" /></svg>
           <span>数据</span>
@@ -269,7 +279,7 @@ export function KanbanApp({
             onSelectTask={setSelectedTask}
           />
         )}
-        {tab === "create" && (
+        {tab === "create" && mayCreateTask && (
           <CreatePage
             state={state} memberId={memberId}
             onCreated={(board) => { setState(board); setTab("board"); showToast("任务已创建"); }}
@@ -280,6 +290,9 @@ export function KanbanApp({
           <MePage
             state={state} memberId={memberId} setMemberId={setMemberId}
             columns={columns} session={session}
+            canManage={mayManageTeam}
+            onTeamUpdated={setState}
+            onError={showToast}
             onLogin={() => { if (isInFeishu()) attemptFeishuLogin(); else showToast("请在飞书中打开以使用飞书登录"); }}
           />
         )}
@@ -333,10 +346,12 @@ export function KanbanApp({
             <span className="nav-badge">{summary.waitingReview + overdueCount}</span>
           )}
         </button>
-        <button className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
-          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
-          <span>派活</span>
-        </button>
+        {mayCreateTask && (
+          <button className={`nav-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+            <span>派活</span>
+          </button>
+        )}
         <button className={`nav-item ${tab === "stats" ? "active" : ""}`} onClick={() => setTab("stats")}>
           <svg viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16l4-4 4 4 5-5" /></svg>
           <span>数据</span>
@@ -634,12 +649,15 @@ function CreatePage({
 
 // ===== Me Page =====
 function MePage({
-  state, memberId, setMemberId, columns, session, onLogin
+  state, memberId, setMemberId, columns, session, canManage, onTeamUpdated, onError, onLogin
 }: {
   state: StartupBoardState; memberId: string;
   setMemberId: (id: string) => void;
   columns: Record<TaskStatus, StartupTask[]>;
   session: FeishuUserSession | null;
+  canManage: boolean;
+  onTeamUpdated: (state: StartupBoardState) => void;
+  onError: (message: string) => void;
   onLogin: () => void;
 }) {
   const member = state.team.find((m) => m.id === memberId) || state.team[0];
@@ -653,6 +671,21 @@ function MePage({
   const myOverdue = myTasks.filter(
     (t) => t.dueAt && new Date(t.dueAt).getTime() < Date.now()
   );
+
+  async function updateMember(targetId: string, patch: { name?: string; canCreateTasks?: boolean }) {
+    try {
+      const res = await fetch(`/api/team/${targetId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ actorUserId: memberId, ...patch })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "成员更新失败");
+      onTeamUpdated(json.board);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "成员更新失败");
+    }
+  }
 
   return (
     <div className="my-page">
@@ -680,16 +713,53 @@ function MePage({
           {session ? "当前身份" : "选择身份（预览模式）"}
         </div>
         <div className="member-switcher">
-          {state.team.map((m) => (
+          {(session ? state.team.filter((m) => m.id === memberId) : state.team).map((m) => (
             <button key={m.id}
               className={`member-chip ${m.id === memberId ? "active" : ""}`}
-              onClick={() => setMemberId(m.id)}>
+              onClick={() => { if (!session) setMemberId(m.id); }}>
               <span className="member-chip-avatar">{m.name[0]}</span>
               <span>{m.name}</span>
             </button>
           ))}
         </div>
       </div>
+
+      {canManage && (
+        <div className="my-section">
+          <div className="my-section-title">团队权限</div>
+          <div className="task-list">
+            {state.team.map((m) => {
+              const editableCreate = !canManageTeam(m);
+              return (
+                <div key={m.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
+                  <div className="task-card-header">
+                    <span className="task-type">{canManageTeam(m) ? "创始人" : canCreateTask(m) ? "可派活" : "普通员工"}</span>
+                    <span className="task-type">{m.feishuOpenId ? "已绑定飞书" : "未绑定"}</span>
+                  </div>
+                  <input
+                    className="form-input"
+                    defaultValue={m.name}
+                    onBlur={(event) => {
+                      const name = event.currentTarget.value.trim();
+                      if (name && name !== m.name) updateMember(m.id, { name });
+                    }}
+                    aria-label="成员名称"
+                  />
+                  <label className="risk-option" style={{ marginTop: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={canCreateTask(m)}
+                      disabled={!editableCreate}
+                      onChange={(event) => updateMember(m.id, { canCreateTasks: event.currentTarget.checked })}
+                    />
+                    允许创建任务
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* WIP */}
       <div className="my-section">

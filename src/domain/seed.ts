@@ -8,6 +8,7 @@ export const demoTeam: TeamMember[] = [
     name: "负责人",
     roleLabel: "派活 / 客户判断 / 最终口径",
     feishuOpenId: "ou_founder_demo",
+    permissions: ["create_task", "manage_team"],
     mode: "available",
     maxActiveTasks: 2,
     skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
@@ -17,6 +18,7 @@ export const demoTeam: TeamMember[] = [
     name: "搭建手",
     roleLabel: "系统搭建 / 自动化 / 文档",
     feishuOpenId: "ou_builder_demo",
+    permissions: [],
     mode: "available",
     maxActiveTasks: 2,
     skills: ["product", "feishu", "delivery", "diagnosis"]
@@ -26,6 +28,7 @@ export const demoTeam: TeamMember[] = [
     name: "运营手",
     roleLabel: "线索跟进 / 资料整理 / 复核",
     feishuOpenId: "ou_operator_demo",
+    permissions: [],
     mode: "reviewing",
     maxActiveTasks: 2,
     skills: ["sales", "ops", "delivery", "diagnosis"]
@@ -168,4 +171,3 @@ function task(input: Omit<StartupTask, "feishu" | "createdAt" | "updatedAt" | "w
     ]
   };
 }
-

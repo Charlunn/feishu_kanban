@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getFeishuConfig, isFeishuConfigured, getTenantAccessToken } from "@/lib/feishu/client";
 import { getKanbanStore } from "@/lib/store";
 import type { FeishuUserSession } from "@/domain/models";
+import { findFounder } from "@/domain/permissions";
 
 const FEISHU_BASE_URL = "https://open.feishu.cn/open-apis";
 
@@ -66,18 +67,54 @@ export async function POST(request: Request) {
 
     const { access_token, refresh_token, expires_in, open_id, union_id, name, avatar_url } = tokenJson.data;
 
-    // 匹配 team member
-    const board = await getKanbanStore().read();
-    const member = board.team.find((m) => m.feishuOpenId === open_id);
+    const store = getKanbanStore();
+    const board = await store.update((state) => {
+      const existing = state.team.find((m) => m.feishuOpenId === open_id);
+      if (existing || !open_id) return state;
 
-    if (!member) {
-      return NextResponse.json({
-        error: "你的飞书账号未关联到团队成员，请联系管理员配置 feishuOpenId",
-        openId: open_id,
-        name,
-        fallback: true
-      }, { status: 403 });
-    }
+      const configuredOwnerOpenId = process.env.FEISHU_OWNER_OPEN_ID?.trim();
+      const founder = findFounder(state);
+      const founderHasRealOpenId = Boolean(founder?.feishuOpenId && !founder.feishuOpenId.endsWith("_demo"));
+      const shouldBecomeFounder = configuredOwnerOpenId
+        ? configuredOwnerOpenId === open_id
+        : !founderHasRealOpenId;
+
+      if (shouldBecomeFounder && founder) {
+        return {
+          ...state,
+          team: state.team.map((member) =>
+            member.id === founder.id
+              ? {
+                  ...member,
+                  name: name || member.name,
+                  feishuOpenId: open_id,
+                  permissions: ["create_task", "manage_team"]
+                }
+              : member
+          )
+        };
+      }
+
+      const memberId = `member_${open_id.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 36)}`;
+      return {
+        ...state,
+        team: [
+          ...state.team,
+          {
+            id: memberId,
+            name: name || "飞书成员",
+            roleLabel: "普通员工",
+            feishuOpenId: open_id,
+            permissions: [],
+            mode: "available",
+            maxActiveTasks: 2,
+            skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+          }
+        ]
+      };
+    });
+
+    const member = board.team.find((m) => m.feishuOpenId === open_id) || board.team[0];
 
     const session: FeishuUserSession = {
       openId: open_id || "",
@@ -90,7 +127,7 @@ export async function POST(request: Request) {
       expiresAt: new Date(Date.now() + (expires_in || 7200) * 1000).toISOString()
     };
 
-    return NextResponse.json({ session, member });
+    return NextResponse.json({ session, member, board });
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : "登录失败",

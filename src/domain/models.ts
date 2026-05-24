@@ -1,4 +1,5 @@
 export type MemberMode = "available" | "focused" | "reviewing" | "away";
+export type TeamPermission = "create_task" | "manage_team";
 
 export type TaskStatus = "pool" | "ready" | "claimed" | "doing" | "review" | "done" | "blocked";
 
@@ -33,6 +34,7 @@ export interface TeamMember {
   name: string;
   roleLabel: string;
   feishuOpenId: string;
+  permissions?: TeamPermission[];
   mode: MemberMode;
   maxActiveTasks: number;
   skills: TaskType[];

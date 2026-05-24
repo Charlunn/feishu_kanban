@@ -11,9 +11,10 @@ import {
 } from "@/lib/feishu/events";
 import { getKanbanStore } from "@/lib/store";
 import { createTask, approveDone, moveTaskByAction } from "@/domain/operations";
+import { canCreateTask } from "@/domain/permissions";
 import { buildAtReplyCard, buildTaskCard } from "@/lib/feishu/cards";
 import { sendInteractiveCard, isFeishuConfigured, patchInteractiveCard } from "@/lib/feishu/client";
-import { memberOrFallbackFromFeishu } from "@/lib/feishu/identity";
+import { ensureEmployeeFromFeishu } from "@/lib/feishu/identity";
 
 const WEBAPPURL = process.env.NEXT_PUBLIC_APP_BASE_URL || "http://localhost:3015";
 
@@ -42,14 +43,14 @@ export async function POST(request: Request) {
       const note = normalized.blockReason || normalized.note;
 
       const store = getKanbanStore();
-      const current = await store.read();
-      const member = normalized.memberId
-        ? (current.team.find((m) => m.id === normalized.memberId) ?? memberOrFallbackFromFeishu(current, normalized.openId))
-        : memberOrFallbackFromFeishu(current, normalized.openId);
-
-      const board = await store.update((state) =>
-        moveTaskByAction(state, normalized.taskId, member.id, normalized.action, note)
-      );
+      const board = await store.update((state) => {
+        if (normalized.memberId) {
+          const member = state.team.find((m) => m.id === normalized.memberId);
+          if (member) return moveTaskByAction(state, normalized.taskId, member.id, normalized.action, note);
+        }
+        const ensured = ensureEmployeeFromFeishu(state, normalized.openId);
+        return moveTaskByAction(ensured.state, normalized.taskId, ensured.member.id, normalized.action, note);
+      });
 
       const updatedTask = board.tasks.find((t) => t.id === normalized.taskId);
       if (updatedTask?.feishu.messageId) {
@@ -91,9 +92,11 @@ export async function POST(request: Request) {
       const store = getKanbanStore();
       const currentBoard = await store.read();
 
-      // Map sender open_id to team member
-      const member = currentBoard.team.find((m) => m.feishuOpenId === msgEvent.senderId)
-        ?? currentBoard.team[0];
+      const ensuredSender = ensureEmployeeFromFeishu(currentBoard, msgEvent.senderId);
+      if (!canCreateTask(ensuredSender.member)) {
+        await store.update(() => ensuredSender.state);
+        return NextResponse.json({ ok: true, skipped: "sender_without_create_permission" });
+      }
 
       const board = await store.update((state) =>
         createTask(state, {
@@ -102,13 +105,13 @@ export async function POST(request: Request) {
           priority: "normal",
           source: "feishu_message",
           outcome: "（待完善）",
-          context: `来自飞书消息，发送人：${member.name}，消息ID：${msgEvent.messageId}`,
+          context: `来自飞书消息，发送人：${ensuredSender.member.name}，消息ID：${msgEvent.messageId}`,
           acceptanceCriteria: []
-        }, member.id)
+        }, ensuredSender.member.id)
       );
 
       const newTask = board.tasks[0];
-      const replyCard = buildAtReplyCard(newTask.title, newTask.id, member.name, origin);
+      const replyCard = buildAtReplyCard(newTask.title, newTask.id, ensuredSender.member.name, origin);
 
       // Reply to the chat
       if (isFeishuConfigured()) {

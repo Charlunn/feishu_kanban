@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { createTask, getBoardSummary } from "@/domain/operations";
+import { canCreateTask } from "@/domain/permissions";
 import { buildTaskCard } from "@/lib/feishu/cards";
 import { getKanbanStore } from "@/lib/store";
 import { createTaskSchema } from "@/lib/validation";
@@ -20,8 +21,12 @@ export async function POST(request: Request) {
     const payload = createTaskSchema.parse(await request.json());
     const store = getKanbanStore();
 
-    let board = await store.update((state) =>
-      createTask(state, {
+    let board = await store.update((state) => {
+      const actor = state.team.find((member) => member.id === payload.actorUserId);
+      if (!actor || !canCreateTask(actor)) {
+        throw new Error("你没有创建任务权限，请联系创始人开通。");
+      }
+      return createTask(state, {
         title: payload.title,
         type: payload.type,
         priority: payload.priority,
@@ -33,8 +38,8 @@ export async function POST(request: Request) {
         dueAt: payload.dueAt,
         linkHref: payload.linkHref,
         linkLabel: payload.linkLabel
-      }, payload.actorUserId)
-    );
+      }, payload.actorUserId);
+    });
 
     const task = board.tasks[0];
     const card = buildTaskCard(task, WEBAPPURL);
