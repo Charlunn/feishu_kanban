@@ -11,6 +11,32 @@ import { createFeishuTask } from "@/lib/feishu/tasks";
 
 const WEBAPPURL = process.env.NEXT_PUBLIC_APP_BASE_URL || "http://localhost:3015";
 
+const CREATE_TASK_FIELD_LABELS: Record<string, string> = {
+  title: "任务标题",
+  type: "业务类型",
+  priority: "优先级",
+  source: "任务来源",
+  outcome: "完成标准",
+  context: "背景补充",
+  acceptanceCriteria: "验收条件",
+  riskFlags: "边界标记",
+  dueAt: "截止时间",
+  linkHref: "相关链接",
+  linkLabel: "链接名称",
+  actorUserId: "派发人"
+};
+
+function createTaskErrorMessage(error: ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return "任务信息不完整。";
+  if (!issue.message.startsWith("Invalid input") && !issue.message.startsWith("Invalid option")) {
+    return issue.message;
+  }
+  const field = String(issue.path[0] ?? "");
+  const label = CREATE_TASK_FIELD_LABELS[field];
+  return label ? `${label}不合法，请重新填写。` : "任务信息不完整，请检查后再提交。";
+}
+
 export async function GET() {
   const board = await getKanbanStore().read();
   return NextResponse.json({ board, summary: getBoardSummary(board) });
@@ -104,7 +130,7 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message || "任务信息不完整。" }, { status: 400 });
+      return NextResponse.json({ error: createTaskErrorMessage(error) }, { status: 400 });
     }
     return NextResponse.json({ error: error instanceof Error ? error.message : "创建失败。" }, { status: 400 });
   }

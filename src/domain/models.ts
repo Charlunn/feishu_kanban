@@ -15,20 +15,25 @@ export interface TeamRole {
 
 export type TaskStatus = "pool" | "ready" | "claimed" | "doing" | "review" | "done" | "blocked";
 
-export type TaskPriority = "urgent" | "high" | "normal" | "low";
+export const TASK_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
+export type TaskPriority = typeof TASK_PRIORITIES[number];
 
-export type TaskType = "sales" | "diagnosis" | "delivery" | "ops" | "product" | "feishu";
+export const TASK_TYPES = ["sales", "diagnosis", "delivery", "quote", "ops", "product", "feishu"] as const;
+export type TaskType = typeof TASK_TYPES[number];
 
-export type TaskSource =
-  | "manual"
-  | "feishu_message"
-  | "feishu_card"
-  | "official_site_lead"
-  | "diagnosis_review"
-  | "quote_review"
-  | "delivery_followup";
+export const TASK_SOURCES = [
+  "manual",
+  "feishu_message",
+  "feishu_card",
+  "official_site_lead",
+  "diagnosis_review",
+  "quote_review",
+  "delivery_followup"
+] as const;
+export type TaskSource = typeof TASK_SOURCES[number];
 
-export type RiskFlag = "customer_facing" | "sensitive_data" | "quote_scope" | "ai_output" | "ops_only";
+export const RISK_FLAGS = ["customer_facing", "sensitive_data", "quote_scope", "ai_output", "ops_only"] as const;
+export type RiskFlag = typeof RISK_FLAGS[number];
 
 export type BoardAction =
   | "create_task"

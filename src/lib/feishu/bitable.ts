@@ -53,7 +53,7 @@ const PRIORITY_ZH: Record<TaskPriority, string> = {
 };
 const TYPE_ZH: Record<string, string> = {
   sales: "线索跟进", diagnosis: "诊断复核", delivery: "交付验收",
-  ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
+  quote: "报价确认", ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
 };
 
 function taskToFields(task: StartupTask): Record<string, unknown> {

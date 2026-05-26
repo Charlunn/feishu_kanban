@@ -1,27 +1,43 @@
 import { z } from "zod";
+import { RISK_FLAGS, TASK_PRIORITIES, TASK_SOURCES, TASK_TYPES } from "../domain/models.ts";
+
+const requiredTrimmedString = (min: number, max: number, minMessage: string, maxMessage: string) =>
+  z.preprocess(
+    (value) => (typeof value === "string" ? value : value == null ? "" : String(value)),
+    z.string().trim().min(min, minMessage).max(max, maxMessage)
+  );
+
+const optionalTrimmedString = (max: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" ? value : value == null ? "" : String(value)),
+    z.string().trim().max(max)
+  );
+
+const acceptanceCriteriaSchema = z
+  .preprocess((value) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === "string") return value.split("\n");
+    if (value == null) return [];
+    return value;
+  }, z.array(z.string()))
+  .transform((items) => items.map((item) => item.trim()).filter(Boolean))
+  .refine((items) => items.length <= 6, "验收条件最多 6 条。");
 
 export const createTaskSchema = z.object({
-  title: z.string().trim().min(2).max(80),
-  type: z.enum(["sales", "diagnosis", "delivery", "ops", "product", "feishu"]),
-  priority: z.enum(["urgent", "high", "normal", "low"]),
-  source: z
-    .enum(["manual", "feishu_message", "feishu_card", "official_site_lead", "diagnosis_review", "quote_review", "delivery_followup"])
+  title: requiredTrimmedString(2, 80, "任务标题至少 2 个字。", "任务标题最多 80 个字。"),
+  type: z.enum(TASK_TYPES),
+  priority: z.enum(TASK_PRIORITIES),
+  source: z.enum(TASK_SOURCES).optional(),
+  outcome: requiredTrimmedString(4, 300, "请写清楚完成标准。", "完成标准最多 300 个字。"),
+  context: optionalTrimmedString(800).optional().default(""),
+  acceptanceCriteria: acceptanceCriteriaSchema.default([]),
+  riskFlags: z.array(z.enum(RISK_FLAGS)).optional().default([]),
+  dueAt: optionalTrimmedString(80)
+    .transform((value) => value || undefined)
     .optional(),
-  outcome: z.string().trim().min(4).max(300),
-  context: z.string().trim().max(800).optional().default(""),
-  acceptanceCriteria: z
-    .union([z.string(), z.array(z.string())])
-    .transform((value) => (Array.isArray(value) ? value : value.split("\n")))
-    .transform((items) => items.map((item) => item.trim()).filter(Boolean))
-    .refine((items) => items.length > 0 && items.length <= 6, "请写 1-6 条验收条件。"),
-  riskFlags: z
-    .array(z.enum(["customer_facing", "sensitive_data", "quote_scope", "ai_output", "ops_only"]))
-    .optional()
-    .default([]),
-  dueAt: z.string().trim().optional(),
-  linkHref: z.string().trim().max(300).optional().default(""),
-  linkLabel: z.string().trim().max(40).optional().default(""),
-  actorUserId: z.string().trim().min(1).default("member_founder")
+  linkHref: optionalTrimmedString(300).optional().default(""),
+  linkLabel: optionalTrimmedString(40).optional().default(""),
+  actorUserId: requiredTrimmedString(1, 120, "缺少派发人。", "派发人参数不合法。").default("member_founder")
 });
 
 export const claimTaskSchema = z.object({

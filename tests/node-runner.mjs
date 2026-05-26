@@ -14,6 +14,7 @@ import {
   suggestNextTaskForMember
 } from "../src/domain/operations.ts";
 import { demoState } from "../src/domain/seed.ts";
+import { createTaskSchema } from "../src/lib/validation.ts";
 import { buildBoardDigestCard, buildTaskCard } from "../src/lib/feishu/cards.ts";
 import { normalizeFeishuCardAction, resolveFeishuChallenge } from "../src/lib/feishu/events.ts";
 
@@ -29,7 +30,7 @@ const base = {
       permissions: ["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"],
       mode: "available",
       maxActiveTasks: 2,
-      skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+      skills: ["sales", "diagnosis", "delivery", "quote", "ops", "product", "feishu"]
     },
     {
       id: "member_reviewer",
@@ -40,7 +41,7 @@ const base = {
       permissions: [],
       mode: "available",
       maxActiveTasks: 2,
-      skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+      skills: ["sales", "diagnosis", "delivery", "quote", "ops", "product", "feishu"]
     }
   ]
 };
@@ -66,6 +67,18 @@ const created = createTask(
 const newTask = created.tasks[0];
 assert.equal(newTask.status, "ready");
 assert.equal(created.auditLogs[0].action, "create_task");
+
+const quotePayload = createTaskSchema.parse({
+  title: "确认试点报价口径",
+  type: "quote",
+  priority: "high",
+  outcome: "确认报价包含项、排除项和客户可见口径。",
+  riskFlags: ["quote_scope"],
+  actorUserId: "member_founder"
+});
+assert.deepEqual(quotePayload.acceptanceCriteria, []);
+const pooledQuote = createTask(base, quotePayload, quotePayload.actorUserId, "2026-05-21T04:00:30.000Z");
+assert.equal(pooledQuote.tasks[0].status, "pool");
 
 const claimed = claimTask(created, newTask.id, "member_founder", "2026-05-21T04:01:00.000Z");
 assert.equal(claimed.tasks[0].status, "claimed");

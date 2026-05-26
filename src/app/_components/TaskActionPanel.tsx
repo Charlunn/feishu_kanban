@@ -7,7 +7,7 @@ import { shareTask, copyToClipboard, isInFeishu } from "@/lib/feishu/jssdk";
 
 const TYPE_LABEL: Record<string, string> = {
   sales: "线索跟进", diagnosis: "诊断复核", delivery: "交付验收",
-  ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
+  quote: "报价确认", ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
 };
 
 const PRIORITY_LABEL: Record<string, string> = {

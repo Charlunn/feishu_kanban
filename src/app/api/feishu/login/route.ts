@@ -194,7 +194,7 @@ export async function POST(request: Request) {
         permissions,
         mode: "available",
         maxActiveTasks: 2,
-        skills: ["sales", "diagnosis", "delivery", "ops", "product", "feishu"]
+        skills: ["sales", "diagnosis", "delivery", "quote", "ops", "product", "feishu"]
       };
 
       return {

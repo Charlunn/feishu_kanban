@@ -14,7 +14,7 @@ const PRIORITY_LABEL: Record<TaskPriority, string> = {
 
 const TYPE_LABEL: Record<TaskType, string> = {
   sales: "线索跟进", diagnosis: "诊断复核", delivery: "交付验收",
-  ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
+  quote: "报价确认", ops: "内部运营", product: "产品搭建", feishu: "飞书集成"
 };
 
 const RISK_LABEL: Record<string, string> = {
@@ -608,7 +608,7 @@ function CreatePage({
           context: fd.get("context") || "",
           type: fd.get("type"),
           priority: fd.get("priority"),
-          acceptanceCriteria: fd.get("acceptanceCriteria"),
+          acceptanceCriteria: fd.get("acceptanceCriteria") ?? "",
           dueAt: fd.get("dueAt") || undefined,
           actorUserId: memberId,
           riskFlags
@@ -669,9 +669,9 @@ function CreatePage({
         </div>
 
         <div className="form-group">
-          <label className="form-label">验收条件（每行一条，1-6条）</label>
+          <label className="form-label">验收条件（选填，每行一条，最多 6 条）</label>
           <textarea className="form-textarea" name="acceptanceCriteria"
-            placeholder={"1. 结论无夸大\n2. 数据来源标注\n3. 复核人签字"} required />
+            placeholder={"1. 结论无夸大\n2. 数据来源标注\n3. 复核人签字"} />
         </div>
 
         <div className="form-group">
