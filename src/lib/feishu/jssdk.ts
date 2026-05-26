@@ -136,6 +136,7 @@ export function isInFeishu(): boolean {
 
 export function ensureFeishuJssdk(timeoutMs = 6000): Promise<void> {
   if (typeof window === "undefined") return Promise.reject(new Error("Window is unavailable."));
+  if (!isInFeishu()) return Promise.reject(new Error("Feishu JSSDK is only available inside Feishu."));
   if (window.tt?.requestAuthCode && window.h5sdk?.ready) return Promise.resolve();
   if (sdkLoadPromise) return sdkLoadPromise;
 

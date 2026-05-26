@@ -10,7 +10,7 @@ export const demoState: StartupBoardState = {
   tasks: [],
   auditLogs: [],
   feishu: {
-    appName: "DOTSTACK 点绽交付台",
+    appName: "点栈 KANBAN",
     defaultChatId: "",
     webAppUrl: process.env.NEXT_PUBLIC_APP_BASE_URL || "http://localhost:3000",
     bitableMirrorEnabled: false,

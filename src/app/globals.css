@@ -1,4 +1,4 @@
-/* ===== DOTSTACK Delivery Console ===== */
+/* ===== DOTSTACK Kanban ===== */
 
 :root {
   --feishu-blue: #0A2E84;
@@ -796,14 +796,15 @@ a { color: inherit; text-decoration: none; }
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     color: #fff;
   }
 
   .sidebar-brand-logo {
-    width: 132px;
-    height: auto;
+    width: 36px;
+    height: 36px;
     display: block;
+    flex: 0 0 auto;
   }
 
   .sidebar-brand-copy {
@@ -814,9 +815,12 @@ a { color: inherit; text-decoration: none; }
   }
 
   .sidebar-brand-copy strong {
+    max-width: 128px;
     font-size: 15px;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .sidebar-brand-copy span {
@@ -922,7 +926,7 @@ a { color: inherit; text-decoration: none; }
   }
 
   .sidebar-nav.collapsed .sidebar-brand-logo {
-    width: 40px;
+    width: 36px;
   }
 
   .sidebar-nav.collapsed .sidebar-brand-copy {
@@ -1706,6 +1710,7 @@ a { color: inherit; text-decoration: none; }
 .heatmap-container {
   width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .heatmap-detail {
@@ -1736,14 +1741,14 @@ a { color: inherit; text-decoration: none; }
   grid-template-rows: repeat(7, 1fr);
   grid-auto-flow: column;
   gap: 3px;
-  min-height: 124px;
-  width: 100%;
+  min-height: 102px;
+  width: max-content;
+  max-width: 100%;
 }
 
 .heatmap-cell {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1 / 1;
+  width: 12px;
+  height: 12px;
   border-radius: 3px;
   background: var(--border-light);
   border: 0;

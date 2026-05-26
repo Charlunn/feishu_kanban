@@ -250,10 +250,10 @@ export function KanbanApp({
       <nav className={`sidebar-nav ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">
-            <img src="/brand/logo-horizontal-white.svg" alt="DOTSTACK 点绽" className="sidebar-brand-logo" />
+            <img src="/brand/logo-icon-white.svg" alt="DOTSTACK" className="sidebar-brand-logo" />
             <div className="sidebar-brand-copy">
-              <strong>点绽交付台</strong>
-              <span>DOTSTACK Delivery Console</span>
+              <strong>点栈 KANBAN</strong>
+              <span>DOTSTACK</span>
             </div>
           </div>
           <button
@@ -309,7 +309,7 @@ export function KanbanApp({
           </span>
           <div className="desktop-header-brand">
             <img src="/brand/logo-icon-color.svg" alt="" aria-hidden="true" />
-            <span>DOTSTACK 点绽</span>
+            <span>点栈 KANBAN</span>
           </div>
           <span className={session || inFeishuClient || feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
             {connectionLabel}
@@ -322,7 +322,7 @@ export function KanbanApp({
         {/* Mobile Top Bar */}
         <header className="top-bar">
           <span className="top-bar-title">
-            {session ? `${session.name} · 点绽交付台` : "DOTSTACK 点绽交付台"}
+            {session ? `${session.name} · 点栈 KANBAN` : "点栈 KANBAN"}
           </span>
           <span className={session || inFeishuClient || feishuReady ? "top-bar-status" : "top-bar-status offline"}>
             {connectionLabel}
@@ -1570,7 +1570,7 @@ function heatmapLevel(count: number): number {
 function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: string }) {
   const [heatmapScope, setHeatmapScope] = useState<"team" | "me">("team");
   const [hoveredHeatmapDate, setHoveredHeatmapDate] = useState<string | null>(null);
-  const [heatmapDays, setHeatmapDays] = useState(84);
+  const [heatmapDays, setHeatmapDays] = useState(182);
   const heatmapContainerRef = useRef<HTMLDivElement | null>(null);
   const now = new Date();
 
@@ -1579,9 +1579,8 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
     if (!node) return;
 
     const updateHeatmapDays = (width: number) => {
-      if (width >= 1180) setHeatmapDays(84);
-      else if (width >= 760) setHeatmapDays(56);
-      else setHeatmapDays(28);
+      const weekCount = Math.max(4, Math.min(52, Math.floor(width / 15)));
+      setHeatmapDays(weekCount * 7);
     };
 
     updateHeatmapDays(node.clientWidth);
@@ -1610,7 +1609,7 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
       myCompleted: number;
     }> = [];
 
-    for (let i = 83; i >= 0; i--) {
+    for (let i = 363; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const date = d.toISOString().slice(0, 10);
@@ -1882,7 +1881,7 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
               <span>六</span>
             </div>
             <div className="heatmap-container" ref={heatmapContainerRef}>
-              <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${Math.ceil(visibleHeatmap.length / 7)}, minmax(0, 1fr))` }}>
+              <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${Math.ceil(visibleHeatmap.length / 7)}, 12px)` }}>
                 {visibleHeatmap.map((day) => (
                   <button
                     key={day.date}

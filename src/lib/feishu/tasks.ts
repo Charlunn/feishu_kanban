@@ -42,14 +42,14 @@ export async function createFeishuTask(
         ? `验收条件：\n${task.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}`
         : "",
       task.riskFlags.length ? `边界标记：${task.riskFlags.join("、")}` : "",
-      `\n来源：DOTSTACK 点绽交付台`
+      `\n来源：点栈 KANBAN`
     ].filter(Boolean).join("\n"),
     created_at: String(now * 1000),
       // Origin identifies the task as coming from our app
     origin: {
       platform_i18n_name: {
-        zh_cn: "DOTSTACK 点绽交付台",
-        en_us: "DOTSTACK Delivery Console"
+        zh_cn: "点栈 KANBAN",
+        en_us: "DOTSTACK KANBAN"
       }
     }
   };
