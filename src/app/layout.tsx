@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI交付战情看板",
-  description: "飞书内嵌的三人团队任务认领和复核看板",
+  title: "DOTSTACK 点绽交付台",
+  description: "DOTSTACK 点绽团队任务分发、交付协同与数据洞察面板",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "战情看板"
+    title: "点绽交付台"
   }
 };
 

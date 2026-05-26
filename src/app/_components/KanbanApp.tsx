@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TASK_TYPES } from "@/domain/models";
 import type { BoardSummary, FeishuUserSession, MemberMode, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamMember, TeamPermission } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
@@ -87,6 +87,7 @@ export function KanbanApp({
   const [loginLoading, setLoginLoading] = useState(false);
   const [selectedTask, setSelectedTask] = useState<StartupTask | null>(null);
   const [inFeishuClient, setInFeishuClient] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const activeMember = state.team.find((m) => m.id === memberId) || state.team[0] || GUEST_MEMBER;
   const mayCreateTask = activeMember ? canCreateTask(activeMember, state) : false;
@@ -246,37 +247,56 @@ export function KanbanApp({
   return (
     <div className="app-shell">
       {/* Desktop Sidebar Nav */}
-      <nav className="sidebar-nav">
-        <div className="sidebar-brand">战</div>
+      <nav className={`sidebar-nav ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand">
+            <img src="/brand/logo-horizontal-white.svg" alt="DOTSTACK 点绽" className="sidebar-brand-logo" />
+            <div className="sidebar-brand-copy">
+              <strong>点绽交付台</strong>
+              <span>DOTSTACK Delivery Console</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            aria-label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}
+            title={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}
+          >
+            <svg viewBox="0 0 24 24">
+              {sidebarCollapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+            </svg>
+          </button>
+        </div>
         <button className={`sidebar-item ${tab === "board" ? "active" : ""}`} onClick={() => setTab("board")}>
           <svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16" /></svg>
-          <span>看板</span>
+          <span className="sidebar-item-label">看板</span>
           {(summary.waitingReview + overdueCount) > 0 && <span className="sidebar-badge">{summary.waitingReview + overdueCount}</span>}
         </button>
         <button className={`sidebar-item ${tab === "gantt" ? "active" : ""}`} onClick={() => setTab("gantt")}>
           <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7" /></svg>
-          <span>甘特</span>
+          <span className="sidebar-item-label">甘特</span>
         </button>
         {mayCreateTask && (
           <button className={`sidebar-item ${tab === "create" ? "active" : ""}`} onClick={() => setTab("create")}>
             <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
-            <span>派活</span>
+            <span className="sidebar-item-label">派活</span>
           </button>
         )}
         <button className={`sidebar-item ${tab === "stats" ? "active" : ""}`} onClick={() => setTab("stats")}>
           <svg viewBox="0 0 24 24"><path d="M3 3v18h18" /><path d="M7 16l4-4 4 4 5-5" /></svg>
-          <span>数据</span>
+          <span className="sidebar-item-label">数据</span>
         </button>
         {(mayManageTeam || mayManageRoles) && (
           <button className={`sidebar-item ${tab === "admin" ? "active" : ""}`} onClick={() => setTab("admin")}>
             <svg viewBox="0 0 24 24"><path d="M12 3v18M5 8h14M7 16h10" /></svg>
-            <span>管理</span>
+            <span className="sidebar-item-label">管理</span>
           </button>
         )}
         <div className="sidebar-spacer" />
         <button className={`sidebar-item ${tab === "me" ? "active" : ""}`} onClick={() => setTab("me")}>
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" /></svg>
-          <span>我的</span>
+          <span className="sidebar-item-label">我的</span>
         </button>
       </nav>
 
@@ -287,6 +307,10 @@ export function KanbanApp({
           <span className="desktop-header-title">
             {tab === "board" ? "任务看板" : tab === "gantt" ? "甘特图" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : tab === "admin" ? "管理后台" : "我的"}
           </span>
+          <div className="desktop-header-brand">
+            <img src="/brand/logo-icon-color.svg" alt="" aria-hidden="true" />
+            <span>DOTSTACK 点绽</span>
+          </div>
           <span className={session || inFeishuClient || feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
             {connectionLabel}
           </span>
@@ -298,7 +322,7 @@ export function KanbanApp({
         {/* Mobile Top Bar */}
         <header className="top-bar">
           <span className="top-bar-title">
-            {session ? `${session.name}的工作台` : "AI交付战情看板"}
+            {session ? `${session.name} · 点绽交付台` : "DOTSTACK 点绽交付台"}
           </span>
           <span className={session || inFeishuClient || feishuReady ? "top-bar-status" : "top-bar-status offline"}>
             {connectionLabel}
@@ -1534,46 +1558,135 @@ function formatDue(isoStr: string): string {
   return timeStr;
 }
 
+function heatmapLevel(count: number): number {
+  if (count <= 0) return 0;
+  if (count <= 2) return 1;
+  if (count <= 4) return 2;
+  if (count <= 7) return 3;
+  return 4;
+}
+
 // ===== Stats Page =====
 function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: string }) {
+  const [heatmapScope, setHeatmapScope] = useState<"team" | "me">("team");
+  const [hoveredHeatmapDate, setHoveredHeatmapDate] = useState<string | null>(null);
+  const [heatmapDays, setHeatmapDays] = useState(84);
+  const heatmapContainerRef = useRef<HTMLDivElement | null>(null);
   const now = new Date();
 
-  // Activity heatmap: last 12 weeks (84 days)
+  useEffect(() => {
+    const node = heatmapContainerRef.current;
+    if (!node) return;
+
+    const updateHeatmapDays = (width: number) => {
+      if (width >= 1180) setHeatmapDays(84);
+      else if (width >= 760) setHeatmapDays(56);
+      else setHeatmapDays(28);
+    };
+
+    updateHeatmapDays(node.clientWidth);
+    const observer = new ResizeObserver(([entry]) => {
+      updateHeatmapDays(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  const accountMembers = useMemo(() => {
+    return state.team.filter((m) => m.feishuOpenId && !m.feishuOpenId.endsWith("_demo"));
+  }, [state.team]);
+
   const heatmapData = useMemo(() => {
-    const days: Array<{ date: string; count: number; dayOfWeek: number }> = [];
+    const days: Array<{
+      date: string;
+      dayOfWeek: number;
+      label: string;
+      teamLogs: number;
+      teamCreated: number;
+      teamCompleted: number;
+      teamActors: number;
+      myLogs: number;
+      myCreated: number;
+      myCompleted: number;
+    }> = [];
+
     for (let i = 83; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      // Count workLog entries on this day
-      let count = 0;
+      const date = d.toISOString().slice(0, 10);
+      const actorSet = new Set<string>();
+      let teamLogs = 0;
+      let myLogs = 0;
+      let teamCreated = 0;
+      let myCreated = 0;
+      let teamCompleted = 0;
+      let myCompleted = 0;
+
       for (const task of state.tasks) {
+        if (task.createdAt.slice(0, 10) === date) {
+          teamCreated += 1;
+          if (task.createdByUserId === memberId) myCreated += 1;
+        }
+        if (task.completedAt?.slice(0, 10) === date) {
+          teamCompleted += 1;
+          if (task.assigneeUserId === memberId) myCompleted += 1;
+        }
         for (const log of task.workLog) {
-          if (log.at.slice(0, 10) === dateStr) count++;
+          if (log.at.slice(0, 10) !== date) continue;
+          teamLogs += 1;
+          actorSet.add(log.actorUserId);
+          if (log.actorUserId === memberId) myLogs += 1;
         }
       }
-      days.push({ date: dateStr, count, dayOfWeek: d.getDay() });
-    }
-    return days;
-  }, [state.tasks]);
 
-  // Streak: consecutive days with activity
-  const streak = useMemo(() => {
+      days.push({
+        date,
+        dayOfWeek: d.getDay(),
+        label: d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric", weekday: "short" }),
+        teamLogs,
+        teamCreated,
+        teamCompleted,
+        teamActors: actorSet.size,
+        myLogs,
+        myCreated,
+        myCompleted
+      });
+    }
+
+    return days;
+  }, [memberId, now, state.tasks]);
+
+  const scopedHeatmap = useMemo(() => {
+    return heatmapData.map((day) => {
+      const count = heatmapScope === "team" ? day.teamLogs : day.myLogs;
+      return {
+        ...day,
+        count,
+        created: heatmapScope === "team" ? day.teamCreated : day.myCreated,
+        completed: heatmapScope === "team" ? day.teamCompleted : day.myCompleted
+      };
+    });
+  }, [heatmapData, heatmapScope]);
+
+  const visibleHeatmap = useMemo(() => {
+    return scopedHeatmap.slice(-heatmapDays);
+  }, [heatmapDays, scopedHeatmap]);
+
+  const hoveredHeatmap = visibleHeatmap.find((day) => day.date === hoveredHeatmapDate)
+    || [...visibleHeatmap].reverse().find((day) => day.count > 0)
+    || visibleHeatmap[visibleHeatmap.length - 1];
+
+  const heatmapTotal = visibleHeatmap.reduce((sum, day) => sum + day.count, 0);
+  const heatmapPeak = visibleHeatmap.reduce((max, day) => Math.max(max, day.count), 0);
+  const heatmapStreak = useMemo(() => {
     let count = 0;
-    for (let i = 0; i < 60; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const hasActivity = state.tasks.some((t) =>
-        t.workLog.some((log) => log.at.slice(0, 10) === dateStr)
-      );
-      if (hasActivity) count++;
-      else if (i > 0) break; // allow today to be empty
+    for (let i = visibleHeatmap.length - 1; i >= 0; i--) {
+      if (visibleHeatmap[i].count > 0) count += 1;
+      else if (count > 0) break;
     }
     return count;
-  }, [state.tasks]);
+  }, [visibleHeatmap]);
 
-  // Cycle time: average hours from claimed to done
   const cycleTime = useMemo(() => {
     const doneTasks = state.tasks.filter((t) => t.status === "done" && t.claimedAt && t.completedAt);
     if (doneTasks.length === 0) return null;
@@ -1585,28 +1698,42 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
     return Math.round(totalHours / doneTasks.length);
   }, [state.tasks]);
 
-  // Throughput: tasks completed per week (last 4 weeks)
-  const throughput = useMemo(() => {
-    const weeks: Array<{ label: string; count: number }> = [];
-    for (let w = 3; w >= 0; w--) {
-      const weekStart = new Date(now);
-      weekStart.setDate(weekStart.getDate() - (w + 1) * 7);
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() - w * 7);
-      const count = state.tasks.filter((t) => {
-        if (!t.completedAt) return false;
-        const completed = new Date(t.completedAt).getTime();
-        return completed >= weekStart.getTime() && completed < weekEnd.getTime();
-      }).length;
-      const label = `${weekStart.getMonth() + 1}/${weekStart.getDate()}`;
-      weeks.push({ label, count });
+  const recentDailyFlow = useMemo(() => {
+    return heatmapData.slice(-14).map((day) => ({
+      label: day.label.replace(/^(\d+\/\d+).*/, "$1"),
+      created: day.teamCreated,
+      completed: day.teamCompleted
+    }));
+  }, [heatmapData]);
+
+  const maxDailyFlow = Math.max(...recentDailyFlow.flatMap((day) => [day.created, day.completed]), 1);
+
+  const weeklyFlow = useMemo(() => {
+    const weeks: Array<{ label: string; created: number; completed: number }> = [];
+    for (let w = 5; w >= 0; w--) {
+      const start = startOfDay(addDays(now, -(w + 1) * 7 + 1));
+      const end = startOfDay(addDays(now, -w * 7 + 1));
+      let created = 0;
+      let completed = 0;
+      for (const task of state.tasks) {
+        const createdAt = new Date(task.createdAt).getTime();
+        if (createdAt >= start.getTime() && createdAt < end.getTime()) created += 1;
+        if (task.completedAt) {
+          const completedAt = new Date(task.completedAt).getTime();
+          if (completedAt >= start.getTime() && completedAt < end.getTime()) completed += 1;
+        }
+      }
+      weeks.push({
+        label: `${start.getMonth() + 1}/${start.getDate()}`,
+        created,
+        completed
+      });
     }
     return weeks;
-  }, [state.tasks]);
+  }, [now, state.tasks]);
 
-  const maxThroughput = Math.max(...throughput.map((w) => w.count), 1);
+  const maxWeeklyFlow = Math.max(...weeklyFlow.flatMap((week) => [week.created, week.completed]), 1);
 
-  // Upcoming milestones: tasks with dueAt sorted by date
   const milestones = useMemo(() => {
     return state.tasks
       .filter((t) => t.dueAt && t.status !== "done")
@@ -1614,19 +1741,65 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
       .slice(0, 6);
   }, [state.tasks]);
 
-  // Per-member stats
-  const accountMembers = useMemo(() => {
-    return state.team.filter((m) => m.feishuOpenId && !m.feishuOpenId.endsWith("_demo"));
-  }, [state.team]);
-
   const memberStats = useMemo(() => {
     return accountMembers.map((m) => {
-      const completed = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status === "done").length;
-      const active = state.tasks.filter((t) => t.assigneeUserId === m.id && t.status !== "done" && t.status !== "pool" && t.status !== "ready").length;
-      const load = Math.min(100, Math.round((active / Math.max(1, m.maxActiveTasks)) * 100));
-      return { ...m, completed, active, load };
-    });
-  }, [state.tasks, accountMembers]);
+      const memberTasks = state.tasks.filter((t) => t.assigneeUserId === m.id);
+      const completedTasks = memberTasks.filter((t) => t.status === "done");
+      const active = memberTasks.filter((t) => t.status === "claimed" || t.status === "doing" || t.status === "review").length;
+      const review = memberTasks.filter((t) => t.status === "review").length;
+      const overdue = memberTasks.filter((t) => t.dueAt && t.status !== "done" && new Date(t.dueAt).getTime() < now.getTime()).length;
+      const load = Math.min(100, Math.round((active / Math.max(1, m.maxActiveTasks || 1)) * 100));
+      const cycleHours = completedTasks
+        .filter((t) => t.claimedAt && t.completedAt)
+        .map((t) => (new Date(t.completedAt!).getTime() - new Date(t.claimedAt!).getTime()) / 3_600_000);
+      const avgCycle = cycleHours.length ? Math.round(cycleHours.reduce((sum, hours) => sum + hours, 0) / cycleHours.length) : null;
+      return { ...m, completed: completedTasks.length, active, review, overdue, load, avgCycle };
+    }).sort((a, b) => b.completed - a.completed || b.active - a.active);
+  }, [accountMembers, now, state.tasks]);
+
+  const riskBreakdown = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of state.tasks) {
+      for (const flag of task.riskFlags) counts.set(flag, (counts.get(flag) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([flag, count]) => ({ flag, label: RISK_LABEL[flag] || flag, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [state.tasks]);
+
+  const dueBreakdown = useMemo(() => {
+    const buckets = {
+      overdue: 0,
+      today: 0,
+      soon: 0,
+      week: 0,
+      later: 0,
+      none: 0
+    };
+
+    for (const task of state.tasks) {
+      if (task.status === "done") continue;
+      if (!task.dueAt) {
+        buckets.none += 1;
+        continue;
+      }
+      const diff = new Date(task.dueAt).getTime() - now.getTime();
+      if (diff < 0) buckets.overdue += 1;
+      else if (diff < 86_400_000) buckets.today += 1;
+      else if (diff < 3 * 86_400_000) buckets.soon += 1;
+      else if (diff < 7 * 86_400_000) buckets.week += 1;
+      else buckets.later += 1;
+    }
+
+    return [
+      { label: "已超期", count: buckets.overdue },
+      { label: "24小时内", count: buckets.today },
+      { label: "3天内", count: buckets.soon },
+      { label: "本周内", count: buckets.week },
+      { label: "更晚", count: buckets.later },
+      { label: "未设截止", count: buckets.none }
+    ];
+  }, [now, state.tasks]);
 
   const blockedCount = state.tasks.filter((t) => t.status === "blocked").length;
   const overdueCount = state.tasks.filter((t) => t.dueAt && t.status !== "done" && new Date(t.dueAt).getTime() < now.getTime()).length;
@@ -1636,13 +1809,14 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
   const totalCapacity = accountMembers.reduce((sum, member) => sum + member.maxActiveTasks, 0);
   const activeLoad = memberStats.reduce((sum, member) => sum + member.active, 0);
   const capacityRatio = Math.round((activeLoad / Math.max(1, totalCapacity)) * 100);
+  const activeMemberCount = heatmapData[heatmapData.length - 1]?.teamActors || 0;
 
   return (
     <div className="stats-page">
       <div className="analytics-hero">
         <div>
           <h2>数据看板</h2>
-          <p>聚焦交付健康度、吞吐节奏、团队负载和近期风险。</p>
+          <p>拆开看每天的流量、成员负载、风险密度和交付节奏。</p>
         </div>
         <div className={`health-score ${healthScore < 60 ? "danger" : healthScore < 80 ? "warning" : ""}`}>
           <span>{healthScore}</span>
@@ -1662,14 +1836,14 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
           <span>从认领到完成</span>
         </div>
         <div className="analytics-kpi">
-          <small>连续活跃</small>
-          <strong>{streak}</strong>
-          <span>天有操作记录</span>
+          <small>{heatmapScope === "team" ? "团队连续活跃" : "个人连续活跃"}</small>
+          <strong>{heatmapStreak}</strong>
+          <span>{heatmapTotal} 次动作 / 峰值 {heatmapPeak}</span>
         </div>
         <div className="analytics-kpi">
           <small>容量使用</small>
           <strong>{capacityRatio}%</strong>
-          <span>{activeLoad}/{totalCapacity} WIP</span>
+          <span>{activeLoad}/{totalCapacity} WIP，今日 {activeMemberCount} 人活跃</span>
         </div>
       </div>
 
@@ -1677,27 +1851,61 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
         <section className="analytics-card wide">
           <div className="analytics-card-header">
             <div>
-              <h3>活动热力图</h3>
-              <p>最近 12 周的任务操作密度</p>
+              <h3>天热力图</h3>
+              <p>按天查看任务操作密度，悬停看当天明细。</p>
             </div>
-            <span>{heatmapData.reduce((sum, day) => sum + day.count, 0)} 次</span>
+            <div className="analytics-toolbar">
+              <div className="segmented-control">
+                <button className={heatmapScope === "team" ? "active" : ""} onClick={() => setHeatmapScope("team")}>团队</button>
+                <button className={heatmapScope === "me" ? "active" : ""} onClick={() => setHeatmapScope("me")}>个人</button>
+              </div>
+              <span>{heatmapDays} 天 / {heatmapTotal} 次动作</span>
+            </div>
           </div>
-          <div className="heatmap-container">
-            <div className="heatmap-grid">
-              {heatmapData.map((day, i) => (
-                <div key={i} className={`heatmap-cell level-${Math.min(4, day.count)}`}
-                  title={`${day.date}: ${day.count} 次操作`}
-                  style={{ gridRow: day.dayOfWeek + 1 }} />
-              ))}
+          {hoveredHeatmap && (
+            <div className="heatmap-detail">
+              <strong>{hoveredHeatmap.label}</strong>
+              <span>{hoveredHeatmap.count} 次操作</span>
+              <span>{hoveredHeatmap.created} 新建</span>
+              <span>{hoveredHeatmap.completed} 完成</span>
+              {heatmapScope === "team" && <span>{hoveredHeatmap.teamActors} 人参与</span>}
             </div>
-            <div className="heatmap-legend">
-              <span>少</span>
-              <div className="heatmap-cell level-0" />
-              <div className="heatmap-cell level-1" />
-              <div className="heatmap-cell level-2" />
-              <div className="heatmap-cell level-3" />
-              <div className="heatmap-cell level-4" />
-              <span>多</span>
+          )}
+          <div className="heatmap-layout">
+            <div className="heatmap-weekdays">
+              <span>日</span>
+              <span>一</span>
+              <span>二</span>
+              <span>三</span>
+              <span>四</span>
+              <span>五</span>
+              <span>六</span>
+            </div>
+            <div className="heatmap-container" ref={heatmapContainerRef}>
+              <div className="heatmap-grid" style={{ gridTemplateColumns: `repeat(${Math.ceil(visibleHeatmap.length / 7)}, minmax(0, 1fr))` }}>
+                {visibleHeatmap.map((day) => (
+                  <button
+                    key={day.date}
+                    type="button"
+                    className={`heatmap-cell level-${heatmapLevel(day.count)} ${hoveredHeatmap?.date === day.date ? "active" : ""}`}
+                    title={`${day.label}：${day.count} 次操作`}
+                    style={{ gridRow: day.dayOfWeek + 1 }}
+                    onMouseEnter={() => setHoveredHeatmapDate(day.date)}
+                    onFocus={() => setHoveredHeatmapDate(day.date)}
+                    onMouseLeave={() => setHoveredHeatmapDate(null)}
+                    onBlur={() => setHoveredHeatmapDate(null)}
+                  />
+                ))}
+              </div>
+              <div className="heatmap-legend">
+                <span>少</span>
+                <div className="heatmap-cell level-0" />
+                <div className="heatmap-cell level-1" />
+                <div className="heatmap-cell level-2" />
+                <div className="heatmap-cell level-3" />
+                <div className="heatmap-cell level-4" />
+                <span>多</span>
+              </div>
             </div>
           </div>
         </section>
@@ -1705,16 +1913,36 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
         <section className="analytics-card">
           <div className="analytics-card-header">
             <div>
-              <h3>每周吞吐</h3>
-              <p>最近 4 个滚动周完成数</p>
+              <h3>14天流量</h3>
+              <p>最近两周新建和完成的每日走势。</p>
             </div>
           </div>
-          <div className="throughput-chart">
-            {throughput.map((week, i) => (
-              <div key={i} className="throughput-bar-wrapper">
-                <div className="throughput-bar"
-                  style={{ height: `${(week.count / maxThroughput) * 100}%` }}>
-                  {week.count > 0 && <span>{week.count}</span>}
+          <div className="flow-chart">
+            {recentDailyFlow.map((day) => (
+              <div key={day.label} className="flow-day">
+                <div className="flow-bars">
+                  <span className="flow-bar created" style={{ height: `${Math.max(6, (day.created / maxDailyFlow) * 100)}%` }} title={`${day.label} 新建 ${day.created}`} />
+                  <span className="flow-bar completed" style={{ height: `${Math.max(6, (day.completed / maxDailyFlow) * 100)}%` }} title={`${day.label} 完成 ${day.completed}`} />
+                </div>
+                <small>{day.label}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>周吞吐</h3>
+              <p>近 6 周创建与完成对比。</p>
+            </div>
+          </div>
+          <div className="throughput-chart dense">
+            {weeklyFlow.map((week) => (
+              <div key={week.label} className="throughput-bar-wrapper">
+                <div className="throughput-pair">
+                  <div className="throughput-bar created" style={{ height: `${Math.max(6, (week.created / maxWeeklyFlow) * 100)}%` }} title={`${week.label} 新建 ${week.created}`} />
+                  <div className="throughput-bar" style={{ height: `${Math.max(6, (week.completed / maxWeeklyFlow) * 100)}%` }} title={`${week.label} 完成 ${week.completed}`} />
                 </div>
                 <div className="throughput-label">{week.label}</div>
               </div>
@@ -1726,19 +1954,58 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
           <div className="analytics-card-header">
             <div>
               <h3>团队负载</h3>
-              <p>按真实飞书账号统计，不按角色汇总</p>
+              <p>完成、进行、复核、超期一起看。</p>
             </div>
           </div>
           <div className="leaderboard">
             {memberStats.length === 0 && <div className="analytics-empty">暂无真实飞书账号数据。</div>}
             {memberStats.map((m) => (
-              <div key={m.id} className="leaderboard-row">
+              <div key={m.id} className="leaderboard-row detailed">
                 <span className="leaderboard-avatar">{m.name[0]}</span>
-                <span className="leaderboard-name">{m.name}</span>
+                <div className="leaderboard-person">
+                  <span className="leaderboard-name">{m.name}</span>
+                  <span className="leaderboard-subline">{m.completed} 完成 · {m.review} 待复核 · {m.overdue} 超期</span>
+                </div>
                 <div className="leaderboard-bars">
                   <span className={m.load >= 100 ? "leaderboard-overload" : "leaderboard-done"} style={{ width: `${Math.max(4, m.load)}%` }} />
                 </div>
-                <span className="leaderboard-count">{m.completed} 完成 / {m.active} 进行</span>
+                <span className="leaderboard-count">{m.active}/{m.maxActiveTasks} · {m.avgCycle !== null ? `${m.avgCycle}h` : "-"}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>风险分布</h3>
+              <p>哪些类型的高风险任务积压最多。</p>
+            </div>
+          </div>
+          <div className="mini-metric-list">
+            {riskBreakdown.length === 0 && <div className="analytics-empty">当前没有风险标记任务。</div>}
+            {riskBreakdown.map((item) => (
+              <div key={item.flag} className="mini-metric-row">
+                <span>{item.label}</span>
+                <div><i style={{ width: `${Math.max(6, (item.count / Math.max(1, riskBreakdown[0]?.count || 1)) * 100)}%` }} /></div>
+                <strong>{item.count}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <h3>截止分布</h3>
+              <p>把未完成任务按时间压力拆开看。</p>
+            </div>
+          </div>
+          <div className="due-grid">
+            {dueBreakdown.map((item) => (
+              <div key={item.label} className="due-grid-item">
+                <strong>{item.count}</strong>
+                <span>{item.label}</span>
               </div>
             ))}
           </div>
@@ -1748,7 +2015,7 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
           <div className="analytics-card-header">
             <div>
               <h3>状态分布</h3>
-              <p>当前任务所在阶段</p>
+              <p>当前任务所在阶段。</p>
             </div>
           </div>
           <div className="status-stack">
@@ -1770,7 +2037,7 @@ function StatsPage({ state, memberId }: { state: StartupBoardState; memberId: st
           <div className="analytics-card-header">
             <div>
               <h3>即将到来的里程碑</h3>
-              <p>按截止时间排序的未完成任务</p>
+              <p>按截止时间排序的未完成任务。</p>
             </div>
           </div>
           {milestones.length === 0 && <div className="analytics-empty">暂无带截止时间的未完成任务。</div>}

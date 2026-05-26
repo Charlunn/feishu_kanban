@@ -10,11 +10,10 @@ export const demoState: StartupBoardState = {
   tasks: [],
   auditLogs: [],
   feishu: {
-    appName: "AI交付战情看板",
+    appName: "DOTSTACK 点绽交付台",
     defaultChatId: "",
     webAppUrl: process.env.NEXT_PUBLIC_APP_BASE_URL || "http://localhost:3000",
     bitableMirrorEnabled: false,
     botEnabled: true
   }
 };
-

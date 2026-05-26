@@ -47,7 +47,7 @@ export async function createTaskMeeting(input: CreateMeetingInput): Promise<Meet
   const start = startTime ? new Date(startTime) : new Date(Date.now() + 30 * 60 * 1000);
   const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
 
-  const summary = `【看板讨论】${task.title}`;
+  const summary = `【点绽协同】${task.title}`;
   const description = [
     `任务：${task.title}`,
     `目标：${task.outcome}`,
@@ -55,7 +55,7 @@ export async function createTaskMeeting(input: CreateMeetingInput): Promise<Meet
     note ? `备注：${note}` : "",
     `发起人：${organizer.name}`,
     "",
-    "— 由 AI交付战情看板 自动创建"
+    "— 由 DOTSTACK 点绽交付台 自动创建"
   ].filter(Boolean).join("\n");
 
   const attendeeList = attendees
