@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { TASK_TYPES } from "@/domain/models";
 import { ALL_PERMISSIONS, boardRoles, canManageTeam, memberPermissions, roleForMember } from "@/domain/permissions";
 import { getKanbanStore } from "@/lib/store";
 
@@ -7,7 +8,10 @@ const updateMemberSchema = z.object({
   actorUserId: z.string().trim().min(1),
   name: z.string().trim().min(1).max(40).optional(),
   roleId: z.string().trim().min(1).optional(),
-  permissions: z.array(z.enum(["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"])).optional()
+  permissions: z.array(z.enum(["create_task", "manage_team", "manage_roles", "delete_task", "manage_all_tasks"])).optional(),
+  mode: z.enum(["available", "focused", "reviewing", "away"]).optional(),
+  maxActiveTasks: z.number().int().nonnegative().optional(),
+  skills: z.array(z.enum(TASK_TYPES)).optional()
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -37,12 +41,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           const nextPermissions = payload.permissions
             ? payload.permissions.filter((permission) => ALL_PERMISSIONS.includes(permission))
             : member.permissions || [];
+          const nextSkills = payload.skills
+            ? payload.skills.filter((skill) => TASK_TYPES.includes(skill))
+            : member.skills;
           return {
             ...member,
             name: payload.name || member.name,
             roleId,
             roleLabel: role?.name || member.roleLabel,
-            permissions: nextPermissions
+            permissions: nextPermissions,
+            mode: payload.mode || member.mode,
+            maxActiveTasks: payload.maxActiveTasks ?? member.maxActiveTasks,
+            skills: nextSkills
           };
         })
       };

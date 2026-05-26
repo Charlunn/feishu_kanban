@@ -1808,14 +1808,12 @@ a { color: inherit; text-decoration: none; }
   gap: 12px;
 }
 
-.admin-user-list,
 .admin-role-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.admin-user-card,
 .admin-role-card {
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
@@ -1823,9 +1821,160 @@ a { color: inherit; text-decoration: none; }
   background: var(--bg-card);
 }
 
-.admin-user-card.demo {
-  opacity: 0.78;
+.admin-user-shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.admin-user-table {
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+
+.admin-user-row {
+  width: 100%;
+  min-width: 560px;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(78px, 0.7fr) minmax(72px, 0.7fr) minmax(58px, 0.5fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font: inherit;
+}
+
+.admin-user-row:last-child {
+  border-bottom: 0;
+}
+
+.admin-user-row:not(.admin-user-row-head) {
+  cursor: pointer;
+}
+
+.admin-user-row:not(.admin-user-row-head):hover,
+.admin-user-row.active {
+  background: var(--feishu-blue-bg);
+}
+
+.admin-user-row.active {
+  box-shadow: inset 3px 0 0 var(--feishu-blue);
+}
+
+.admin-user-row-head {
+  min-height: 36px;
   background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-user-cell-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-user-cell-main > span:last-child {
+  min-width: 0;
+}
+
+.admin-user-cell-main strong,
+.admin-user-detail-head strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-cell-main small,
+.admin-user-detail-head small {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-detail {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--bg-card);
+}
+
+.admin-user-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 12px;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.admin-form-grid label,
+.admin-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-form-grid label > span,
+.admin-fieldset-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-fieldset {
+  margin-top: 14px;
+}
+
+.admin-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-user-meta {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.admin-user-meta div {
+  min-width: 0;
+}
+
+.admin-user-meta dt {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.admin-user-meta dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
 }
 
 .admin-user-head {
@@ -1865,10 +2014,18 @@ a { color: inherit; text-decoration: none; }
   flex: 0 0 auto;
 }
 
-.admin-user-controls {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+.admin-user-avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--feishu-blue-light);
+  color: var(--feishu-blue);
+  font-weight: 700;
+}
+
+.admin-user-avatar.large {
+  width: 42px;
+  height: 42px;
 }
 
 @media (min-width: 768px) {
@@ -1896,8 +2053,12 @@ a { color: inherit; text-decoration: none; }
     grid-column: auto;
   }
 
-  .admin-user-controls {
-    grid-template-columns: 1fr 180px;
+  .admin-user-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  }
+
+  .admin-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

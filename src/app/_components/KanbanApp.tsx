@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BoardSummary, FeishuUserSession, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamMember, TeamPermission } from "@/domain/models";
+import { TASK_TYPES } from "@/domain/models";
+import type { BoardSummary, FeishuUserSession, MemberMode, StartupBoardState, StartupTask, TaskPriority, TaskStatus, TaskType, TeamMember, TeamPermission } from "@/domain/models";
 import { TASK_COLUMNS } from "@/domain/operations";
 import { ALL_PERMISSIONS, PERMISSION_LABELS, boardRoles, canCreateTask, canDeleteTask, canManageRoles, canManageTeam, roleForMember } from "@/domain/permissions";
 import { TaskActionPanel } from "./TaskActionPanel";
@@ -22,7 +23,23 @@ const RISK_LABEL: Record<string, string> = {
   quote_scope: "报价", sensitive_data: "敏感", ops_only: "内部"
 };
 
+const MODE_LABEL: Record<MemberMode, string> = {
+  available: "可接任务",
+  focused: "专注中",
+  reviewing: "复核中",
+  away: "离开"
+};
+
 type Tab = "board" | "gantt" | "create" | "stats" | "admin" | "me";
+
+type MemberPatch = {
+  name?: string;
+  roleId?: string;
+  permissions?: TeamPermission[];
+  mode?: MemberMode;
+  maxActiveTasks?: number;
+  skills?: TaskType[];
+};
 
 type DragState = {
   taskId: string;
@@ -722,14 +739,14 @@ function MePage({
   const activeCount = myTasks.filter(
     (t) => t.status === "claimed" || t.status === "doing" || t.status === "review"
   ).length;
-  const wipRatio = activeCount / member.maxActiveTasks;
+  const wipRatio = member.maxActiveTasks > 0 ? activeCount / member.maxActiveTasks : 1;
   const myOverdue = myTasks.filter(
     (t) => t.dueAt && new Date(t.dueAt).getTime() < Date.now()
   );
   const roles = boardRoles(state);
   const [newRoleName, setNewRoleName] = useState("");
 
-  async function updateMember(targetId: string, patch: { name?: string; roleId?: string; permissions?: TeamPermission[] }) {
+  async function updateMember(targetId: string, patch: MemberPatch) {
     try {
       const res = await fetch(`/api/team/${targetId}`, {
         method: "PATCH",
@@ -1004,8 +1021,16 @@ function AdminPage({
 }) {
   const roles = boardRoles(state);
   const [newRoleName, setNewRoleName] = useState("");
+  const [selectedMemberId, setSelectedMemberId] = useState(state.team[0]?.id || "");
+  const selectedMember = state.team.find((member) => member.id === selectedMemberId) || state.team[0];
 
-  async function updateMember(targetId: string, patch: { name?: string; roleId?: string; permissions?: TeamPermission[] }) {
+  useEffect(() => {
+    if (!state.team.some((member) => member.id === selectedMemberId)) {
+      setSelectedMemberId(state.team[0]?.id || "");
+    }
+  }, [selectedMemberId, state.team]);
+
+  async function updateMember(targetId: string, patch: MemberPatch) {
     try {
       const res = await fetch(`/api/team/${targetId}`, {
         method: "PATCH",
@@ -1068,6 +1093,10 @@ function AdminPage({
     }
   }
 
+  function activeTasksForMember(targetId: string): number {
+    return state.tasks.filter((task) => task.assigneeUserId === targetId && ["claimed", "doing", "review"].includes(task.status)).length;
+  }
+
   return (
     <div className="admin-page">
       <div className="analytics-hero">
@@ -1086,57 +1115,146 @@ function AdminPage({
                 <p>{state.team.length} 个账号，权限跟随账号而不是角色统计口径。</p>
               </div>
             </div>
-            <div className="admin-user-list">
-              {state.team.map((m) => {
-                const role = roleForMember(state, m);
-                const explicit = (m.permissions || []).filter((permission) => !role.permissions.includes(permission));
+            <div className="admin-user-shell">
+              <div className="admin-user-table" role="table" aria-label="用户列表">
+                <div className="admin-user-row admin-user-row-head" role="row">
+                  <span>用户</span>
+                  <span>角色</span>
+                  <span>状态</span>
+                  <span>负载</span>
+                </div>
+                {state.team.map((m) => {
+                  const role = roleForMember(state, m);
+                  const activeCount = activeTasksForMember(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`admin-user-row ${selectedMember?.id === m.id ? "active" : ""}`}
+                      onClick={() => setSelectedMemberId(m.id)}
+                    >
+                      <span className="admin-user-cell-main">
+                        {m.avatarUrl ? <img className="admin-user-avatar" src={m.avatarUrl} alt="" /> : <span className="admin-user-avatar fallback">{m.name[0]}</span>}
+                        <span>
+                          <strong>{m.name}</strong>
+                          <small>{m.feishuOpenId || "未绑定飞书"}</small>
+                        </span>
+                      </span>
+                      <span>{role.name}</span>
+                      <span>{MODE_LABEL[m.mode]}</span>
+                      <span>{activeCount}/{m.maxActiveTasks}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedMember && (() => {
+                const role = roleForMember(state, selectedMember);
+                const explicit = (selectedMember.permissions || []).filter((permission) => !role.permissions.includes(permission));
+                const activeCount = activeTasksForMember(selectedMember.id);
+                const selectedSkills = selectedMember.skills || [];
                 return (
-                  <div key={m.id} className="admin-user-card">
-                    <div className="admin-user-head">
-                      {m.avatarUrl ? <img className="admin-user-avatar" src={m.avatarUrl} alt="" /> : <span className="leaderboard-avatar">{m.name[0]}</span>}
+                  <aside key={selectedMember.id} className="admin-user-detail">
+                    <div className="admin-user-detail-head">
+                      {selectedMember.avatarUrl ? <img className="admin-user-avatar large" src={selectedMember.avatarUrl} alt="" /> : <span className="admin-user-avatar large fallback">{selectedMember.name[0]}</span>}
                       <div>
-                        <strong>{m.name}</strong>
-                        <small>Open ID: {m.feishuOpenId || "未绑定"}</small>
-                        {m.feishuUnionId && <small>Union ID: {m.feishuUnionId}</small>}
-                        {m.lastLoginAt && <small>最后登录: {new Date(m.lastLoginAt).toLocaleString("zh-CN")}</small>}
+                        <strong>{selectedMember.name}</strong>
+                        <small>{role.name} · {activeCount}/{selectedMember.maxActiveTasks}</small>
                       </div>
-                      <span className="task-type">{role.name}</span>
                     </div>
-                    <div className="admin-user-controls">
-                      <input
-                        className="form-input"
-                        defaultValue={m.name}
-                        onBlur={(event) => {
-                          const name = event.currentTarget.value.trim();
-                          if (name && name !== m.name) updateMember(m.id, { name });
-                        }}
-                        aria-label="成员名称"
-                      />
-                      <select className="form-select" value={role.id} onChange={(event) => updateMember(m.id, { roleId: event.currentTarget.value })}>
-                        {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                      </select>
+
+                    <div className="admin-form-grid">
+                      <label>
+                        <span>姓名</span>
+                        <input
+                          className="form-input"
+                          defaultValue={selectedMember.name}
+                          onBlur={(event) => {
+                            const name = event.currentTarget.value.trim();
+                            if (name && name !== selectedMember.name) updateMember(selectedMember.id, { name });
+                          }}
+                        />
+                      </label>
+                      <label>
+                        <span>角色</span>
+                        <select className="form-select" value={role.id} onChange={(event) => updateMember(selectedMember.id, { roleId: event.currentTarget.value })}>
+                          {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <span>状态</span>
+                        <select className="form-select" value={selectedMember.mode} onChange={(event) => updateMember(selectedMember.id, { mode: event.currentTarget.value as MemberMode })}>
+                          {Object.entries(MODE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <span>负载上限</span>
+                        <input
+                          className="form-input"
+                          type="number"
+                          min={0}
+                          defaultValue={selectedMember.maxActiveTasks}
+                          onBlur={(event) => {
+                            const maxActiveTasks = Number(event.currentTarget.value);
+                            if (Number.isInteger(maxActiveTasks) && maxActiveTasks >= 0 && maxActiveTasks !== selectedMember.maxActiveTasks) {
+                              updateMember(selectedMember.id, { maxActiveTasks });
+                            }
+                          }}
+                        />
+                      </label>
                     </div>
-                    <div className="risk-options compact">
-                      {ALL_PERMISSIONS.map((permission) => (
-                        <label key={permission} className="risk-option">
-                          <input
-                            type="checkbox"
-                            checked={role.permissions.includes(permission) || explicit.includes(permission)}
-                            disabled={role.permissions.includes(permission)}
-                            onChange={(event) => {
-                              const next = new Set(explicit);
-                              if (event.currentTarget.checked) next.add(permission);
-                              else next.delete(permission);
-                              updateMember(m.id, { permissions: Array.from(next) });
-                            }}
-                          />
-                          {PERMISSION_LABELS[permission]}
-                        </label>
-                      ))}
+
+                    <div className="admin-fieldset">
+                      <div className="admin-fieldset-title">技能</div>
+                      <div className="admin-check-grid">
+                        {TASK_TYPES.map((type) => (
+                          <label key={type} className="risk-option">
+                            <input
+                              type="checkbox"
+                              checked={selectedSkills.includes(type)}
+                              onChange={(event) => {
+                                const next = new Set(selectedSkills);
+                                if (event.currentTarget.checked) next.add(type);
+                                else next.delete(type);
+                                updateMember(selectedMember.id, { skills: Array.from(next) });
+                              }}
+                            />
+                            {TYPE_LABEL[type]}
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+
+                    <div className="admin-fieldset">
+                      <div className="admin-fieldset-title">额外权限</div>
+                      <div className="admin-check-grid">
+                        {ALL_PERMISSIONS.map((permission) => (
+                          <label key={permission} className="risk-option">
+                            <input
+                              type="checkbox"
+                              checked={role.permissions.includes(permission) || explicit.includes(permission)}
+                              disabled={role.permissions.includes(permission)}
+                              onChange={(event) => {
+                                const next = new Set(explicit);
+                                if (event.currentTarget.checked) next.add(permission);
+                                else next.delete(permission);
+                                updateMember(selectedMember.id, { permissions: Array.from(next) });
+                              }}
+                            />
+                            {PERMISSION_LABELS[permission]}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <dl className="admin-user-meta">
+                      <div><dt>Open ID</dt><dd>{selectedMember.feishuOpenId || "未绑定"}</dd></div>
+                      {selectedMember.feishuUnionId && <div><dt>Union ID</dt><dd>{selectedMember.feishuUnionId}</dd></div>}
+                      <div><dt>最后登录</dt><dd>{selectedMember.lastLoginAt ? new Date(selectedMember.lastLoginAt).toLocaleString("zh-CN") : "无记录"}</dd></div>
+                    </dl>
+                  </aside>
                 );
-              })}
+              })()}
             </div>
           </section>
         )}
@@ -1166,7 +1284,6 @@ function AdminPage({
                   <input
                     className="form-input"
                     defaultValue={role.name}
-                    disabled={role.id === "role_founder"}
                     onBlur={(event) => {
                       const name = event.currentTarget.value.trim();
                       if (name && name !== role.name) updateRole(role.id, { name });
@@ -1178,7 +1295,6 @@ function AdminPage({
                         <input
                           type="checkbox"
                           checked={role.permissions.includes(permission)}
-                          disabled={role.id === "role_founder"}
                           onChange={(event) => {
                             const next = new Set(role.permissions);
                             if (event.currentTarget.checked) next.add(permission);
@@ -1257,7 +1373,7 @@ function GanttPage({
         const active = state.tasks.filter((task) => task.assigneeUserId === member.id && ["claimed", "doing", "review"].includes(task.status)).length;
         return { member, active };
       })
-      .filter((item) => item.active >= item.member.maxActiveTasks);
+      .filter((item) => item.member.maxActiveTasks > 0 && item.active >= item.member.maxActiveTasks);
   }, [state]);
 
   return (
