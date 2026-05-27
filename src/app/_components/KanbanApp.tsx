@@ -250,7 +250,7 @@ export function KanbanApp({
       <nav className={`sidebar-nav ${sidebarCollapsed ? "collapsed" : ""}`}>
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">
-            <img src="/brand/logo-icon-white.svg" alt="DOTSTACK" className="sidebar-brand-logo" />
+            <img src="/brand/logo-icon-white-64.png" alt="DOTSTACK" className="sidebar-brand-logo" width={36} height={36} />
             <div className="sidebar-brand-copy">
               <strong>点栈 KANBAN</strong>
               <span>DOTSTACK</span>
@@ -308,7 +308,7 @@ export function KanbanApp({
             {tab === "board" ? "任务看板" : tab === "gantt" ? "甘特图" : tab === "create" ? "派活" : tab === "stats" ? "数据统计" : tab === "admin" ? "管理后台" : "我的"}
           </span>
           <div className="desktop-header-brand">
-            <img src="/brand/logo-icon-color.svg" alt="" aria-hidden="true" />
+            <img src="/brand/logo-icon-color-64.png" alt="" aria-hidden="true" width={18} height={18} />
             <span>点栈 KANBAN</span>
           </div>
           <span className={session || inFeishuClient || feishuReady ? "desktop-header-status" : "desktop-header-status offline"}>
