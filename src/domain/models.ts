@@ -24,6 +24,7 @@ export interface AgentTokenRecord {
 }
 
 export type TaskStatus = "pool" | "ready" | "claimed" | "doing" | "review" | "done" | "blocked";
+export const TASK_STATUSES = ["pool", "ready", "claimed", "doing", "review", "done", "blocked"] as const;
 
 export const TASK_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
 export type TaskPriority = typeof TASK_PRIORITIES[number];
@@ -55,6 +56,16 @@ export type BoardAction =
   | "release_task"
   | "reopen_task"
   | "drop_move";
+
+export const AGENT_TASK_ACTIONS = [
+  "claim_task",
+  "start_task",
+  "request_review",
+  "approve_done",
+  "block_task",
+  "release_task",
+  "reopen_task"
+] as const;
 
 export interface TeamMember {
   id: string;

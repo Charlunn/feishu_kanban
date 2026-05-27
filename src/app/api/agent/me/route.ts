@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildAgentCapabilities, buildAgentIdentity } from "@/lib/agent/auth";
+import { buildAgentApiSchema, buildAgentCapabilities, buildAgentIdentity } from "@/lib/agent/auth";
 import { withAgentSession } from "@/lib/agent/request";
 
 export async function GET(request: Request) {
@@ -9,7 +9,8 @@ export async function GET(request: Request) {
       success: true,
       data: {
         identity: buildAgentIdentity(member, board),
-        capabilities: buildAgentCapabilities(member, board)
+        capabilities: buildAgentCapabilities(member, board),
+        schema: buildAgentApiSchema()
       }
     });
   } catch (error) {

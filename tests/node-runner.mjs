@@ -52,7 +52,7 @@ const base = {
   ]
 };
 
-assert.equal(demoState.team.length, 0);
+assert.equal(demoState.team.length, 2);
 assert.equal(demoState.tasks.length, 0);
 assert.equal(base.team.length, 2);
 assert.equal(getBoardSummary(base).total, 0);

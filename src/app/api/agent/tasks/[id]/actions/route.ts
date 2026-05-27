@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { moveTaskByAction, moveTaskByDrop } from "@/domain/operations";
 import { withAgentSession } from "@/lib/agent/request";
-import { sanitizeBoardForClient } from "@/lib/agent/state";
+import { enrichTaskForAgent, sanitizeBoardForClient } from "@/lib/agent/state";
 import { agentTaskActionSchema } from "@/lib/validation";
 import { getKanbanStore } from "@/lib/store";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       success: true,
       data: {
-        task,
+        task: task ? enrichTaskForAgent(task) : task,
         board: sanitizeBoardForClient(board)
       },
       nextSuggestedActions: task?.status === "review" ? ["approve_done", "reopen_task"] : []

@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { createTask, getBoardSummary } from "@/domain/operations";
 import { canCreateTask } from "@/domain/permissions";
 import { withAgentSession } from "@/lib/agent/request";
-import { sanitizeBoardForClient } from "@/lib/agent/state";
+import { enrichTaskForAgent, sanitizeBoardForClient } from "@/lib/agent/state";
 import { agentTaskDraftSchema } from "@/lib/validation";
 import { getKanbanStore } from "@/lib/store";
 
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        tasks,
+        tasks: tasks.map(enrichTaskForAgent),
         total: tasks.length
       }
     });
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        task,
+        task: enrichTaskForAgent(task),
         board: sanitizeBoardForClient(board),
         summary: getBoardSummary(board)
       },

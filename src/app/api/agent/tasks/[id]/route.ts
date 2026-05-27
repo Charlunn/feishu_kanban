@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { canDeleteTask, hasPermission } from "@/domain/permissions";
 import type { StartupTask } from "@/domain/models";
 import { withAgentSession } from "@/lib/agent/request";
-import { sanitizeBoardForClient } from "@/lib/agent/state";
+import { enrichTaskForAgent, sanitizeBoardForClient } from "@/lib/agent/state";
 import { agentTaskUpdateSchema } from "@/lib/validation";
 import { getKanbanStore } from "@/lib/store";
 
@@ -20,7 +20,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!task) {
       return NextResponse.json({ success: false, error: "任务不存在。" }, { status: 404 });
     }
-    return NextResponse.json({ success: true, data: { task } });
+    return NextResponse.json({ success: true, data: { task: enrichTaskForAgent(task) } });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Agent auth failed." },
@@ -74,7 +74,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({
       success: true,
       data: {
-        task: board.tasks.find((item) => item.id === id),
+        task: enrichTaskForAgent(board.tasks.find((item) => item.id === id)!),
         board: sanitizeBoardForClient(board)
       }
     });

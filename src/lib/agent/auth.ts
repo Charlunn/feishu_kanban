@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { canCreateTask, canDeleteTask, canManageRoles, canManageTeam, hasPermission, memberPermissions } from "../../domain/permissions.ts";
+import { AGENT_TASK_ACTIONS, RISK_FLAGS, TASK_PRIORITIES, TASK_STATUSES, TASK_TYPES } from "../../domain/models.ts";
 import type { AgentTokenRecord, FeishuUserSession, StartupBoardState, TeamMember } from "../../domain/models.ts";
 import { getAgentTokenSummaries } from "./state.ts";
+import { isFeishuConfigured } from "../feishu/client.ts";
 
 const FEISHU_BASE_URL = "https://open.feishu.cn/open-apis";
 
@@ -19,6 +21,34 @@ export interface AgentCapabilities {
   canManageRoles: boolean;
   canManageAllTasks: boolean;
   allowedTaskActions: string[];
+  schemaEndpoint: string;
+}
+
+export interface AgentApiSchema {
+  taskDraft: {
+    format: "json";
+    required: string[];
+    optional: string[];
+    enums: {
+      type: readonly string[];
+      priority: readonly string[];
+      riskFlags: readonly string[];
+      source: readonly string[];
+    };
+    defaults: Record<string, string>;
+    aliases: Record<string, string[]>;
+    example: Record<string, unknown>;
+  };
+  taskAction: {
+    requiredOneOf: string[];
+    enums: {
+      action: readonly string[];
+      targetStatus: readonly string[];
+    };
+    examples: Array<Record<string, unknown>>;
+  };
+  routes: Array<{ method: string; path: string; purpose: string }>;
+  rules: string[];
 }
 
 export interface AgentSkillBundle {
@@ -49,7 +79,81 @@ export function buildAgentCapabilities(member: TeamMember, state: StartupBoardSt
     canManageTeam: canManageTeam(member, state),
     canManageRoles: canManageRoles(member, state),
     canManageAllTasks: hasPermission(member, "manage_all_tasks", state),
-    allowedTaskActions: ["claim_task", "start_task", "request_review", "approve_done", "block_task", "release_task", "reopen_task"]
+    allowedTaskActions: [...AGENT_TASK_ACTIONS],
+    schemaEndpoint: "/api/agent/schema"
+  };
+}
+
+export function buildAgentApiSchema(): AgentApiSchema {
+  return {
+    taskDraft: {
+      format: "json",
+      required: ["title", "type", "priority", "outcome"],
+      optional: ["source", "context", "acceptanceCriteria", "riskFlags", "dueAt", "linkLabel", "linkHref"],
+      enums: {
+        type: TASK_TYPES,
+        priority: TASK_PRIORITIES,
+        riskFlags: RISK_FLAGS,
+        source: ["manual", "feishu_message", "feishu_card", "official_site_lead", "diagnosis_review", "quote_review", "delivery_followup"]
+      },
+      defaults: {
+        source: "manual",
+        context: "",
+        acceptanceCriteria: "[]",
+        riskFlags: "[]"
+      },
+      aliases: {
+        type: ["task_type", "taskType"],
+        outcome: ["goal"],
+        context: ["background"],
+        acceptanceCriteria: ["acceptance_criteria", "criteria"],
+        riskFlags: ["risk_flags"],
+        dueAt: ["due_at"],
+        linkHref: ["link_url", "link"],
+        linkLabel: ["link_label"]
+      },
+      example: {
+        title: "跟进官网新增线索",
+        type: "sales",
+        priority: "high",
+        source: "manual",
+        outcome: "确认线索是否进入深度诊断，并完成首次响应",
+        context: "线索来自官网表单，需要当天回访",
+        acceptanceCriteria: ["完成首次联系", "记录线索结论"],
+        riskFlags: [],
+        dueAt: "2026-05-30T18:00:00+08:00",
+        linkLabel: "线索表单",
+        linkHref: "https://example.com/lead/123"
+      }
+    },
+    taskAction: {
+      requiredOneOf: ["action", "targetStatus"],
+      enums: {
+        action: AGENT_TASK_ACTIONS,
+        targetStatus: TASK_STATUSES
+      },
+      examples: [
+        { action: "claim_task" },
+        { action: "block_task", note: "等待客户补充范围" },
+        { targetStatus: "review" }
+      ]
+    },
+    routes: [
+      { method: "GET", path: "/api/agent/me", purpose: "确认当前身份与权限" },
+      { method: "GET", path: "/api/agent/capabilities", purpose: "获取能力边界与 schema 入口" },
+      { method: "GET", path: "/api/agent/schema", purpose: "读取任务/动作的精确契约" },
+      { method: "GET", path: "/api/agent/tasks", purpose: "查询任务列表" },
+      { method: "POST", path: "/api/agent/tasks", purpose: "创建任务" },
+      { method: "POST", path: "/api/agent/tasks/{id}/actions", purpose: "执行任务动作或状态流转" },
+      { method: "PATCH", path: "/api/agent/tasks/{id}", purpose: "更新任务字段" },
+      { method: "DELETE", path: "/api/agent/tasks/{id}", purpose: "删除任务" }
+    ],
+    rules: [
+      "所有 agent 路由都只使用 Bearer token 鉴权，不要发送 memberId 或 actorUserId。",
+      "创建任务时优先使用 JSON，不要使用 YAML 直接请求接口。",
+      "如果缺少必填字段，先补全草案再提交，不要猜测敏感信息。",
+      "动作流转前先读取当前任务状态，避免发送不合法动作。"
+    ]
   };
 }
 
@@ -182,12 +286,13 @@ description: Use this skill when you need to turn requirements into structured t
 ## Required workflow
 
 1. Call \`GET /api/agent/capabilities\` first.
-2. Call \`GET /api/agent/me\` and confirm the acting identity.
-3. If the user asks to publish a requirement, first rewrite it into a task draft using the template below.
-4. Only after the draft is complete, call \`POST /api/agent/tasks\`.
-5. If the user asks to continue execution, use task actions one step at a time and report what changed.
-6. Do not invent sensitive data, hidden links, deadlines, or acceptance criteria. Ask for missing details when they materially affect execution.
-7. Before destructive actions like delete or broad team changes, restate the exact target and consequence.
+2. Call \`GET /api/agent/schema\` before preparing any payload.
+3. Call \`GET /api/agent/me\` and confirm the acting identity.
+4. If the user asks to publish a requirement, first rewrite it into a task draft using the template below.
+5. Only after the draft is complete, call \`POST /api/agent/tasks\`.
+6. If the user asks to continue execution, read the latest task state first and then use one task action at a time.
+7. Do not invent sensitive data, hidden links, deadlines, or acceptance criteria. Ask for missing details when they materially affect execution.
+8. Before destructive actions like delete or broad team changes, restate the exact target and consequence.
 
 ## Capability snapshot
 
@@ -199,25 +304,28 @@ description: Use this skill when you need to turn requirements into structured t
 
 ## Task draft format
 
-\`\`\`yaml
-title:
-type: sales | diagnosis | delivery | quote | ops | product | feishu
-priority: urgent | high | normal | low
-source: manual
-outcome:
-context:
-acceptanceCriteria:
-  - 
-riskFlags:
-  - 
-dueAt:
-linkLabel:
-linkHref:
+Send JSON, not YAML, when you call the API:
+
+\`\`\`json
+{
+  "title": "跟进官网新增线索",
+  "type": "sales",
+  "priority": "high",
+  "source": "manual",
+  "outcome": "确认线索是否进入深度诊断，并完成首次响应",
+  "context": "线索来自官网表单，需要当天回访",
+  "acceptanceCriteria": ["完成首次联系", "记录线索结论"],
+  "riskFlags": [],
+  "dueAt": "2026-05-30T18:00:00+08:00",
+  "linkLabel": "线索表单",
+  "linkHref": "https://example.com/lead/123"
+}
 \`\`\`
 
 ## API usage
 
 - Always send header: \`Authorization: Bearer ${token}\`
+- \`GET /api/agent/schema\`: read the exact field contract before create/update/action requests
 - \`GET /api/agent/board\`: fetch the latest board
 - \`GET /api/agent/tasks\`: list tasks
 - \`POST /api/agent/tasks\`: create a task from a complete draft
@@ -225,6 +333,14 @@ linkHref:
 - \`PATCH /api/agent/tasks/{id}\`: update task fields
 - \`DELETE /api/agent/tasks/{id}\`: delete a task if allowed
 - \`PATCH /api/agent/team/{id}\`: update team member settings if allowed
+
+## Important rules
+
+- Do not send \`memberId\` or \`actorUserId\` to any \`/api/agent/*\` route.
+- If the user writes fields in snake_case such as \`task_type\` or \`due_at\`, normalize them to the contract from \`GET /api/agent/schema\` before requesting.
+- For actions, send either \`{"action":"claim_task"}\` or \`{"targetStatus":"review"}\`.
+- Before any action request, fetch the task again or otherwise confirm the latest status from the API.
+- If a request fails, read the error, re-read \`GET /api/agent/schema\` or the current task, and retry only after correcting the payload or state mismatch.
 
 ## CLI
 
@@ -255,6 +371,9 @@ export async function verifyFeishuSessionProof(
 ): Promise<TeamMember> {
   const member = state.team.find((item) => item.id === proof.memberId);
   if (!member) throw new Error("成员不存在。");
+  if (!isFeishuConfigured()) {
+    return member;
+  }
   if (!member.feishuOpenId) throw new Error("当前成员未绑定飞书账号。");
 
   const response = await fetch(`${FEISHU_BASE_URL}/authen/v1/user_info`, {

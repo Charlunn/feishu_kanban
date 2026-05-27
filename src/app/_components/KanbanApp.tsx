@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TASK_TYPES } from "@/domain/models";
@@ -363,6 +363,7 @@ export function KanbanApp({
           <MePage
             state={state} memberId={memberId} setMemberId={setMemberId}
             columns={columns} session={session}
+            feishuReady={feishuReady}
             canManage={mayManageTeam}
             canManageRoles={mayManageRoles}
             onTeamUpdated={setState}
@@ -744,12 +745,13 @@ function CreatePage({
 
 // ===== Me Page =====
 function MePage({
-  state, memberId, setMemberId, columns, session, canManage, canManageRoles, onTeamUpdated, onError, onLogin
+  state, memberId, setMemberId, columns, session, feishuReady, canManage, canManageRoles, onTeamUpdated, onError, onLogin
 }: {
   state: StartupBoardState; memberId: string;
   setMemberId: (id: string) => void;
   columns: Record<TaskStatus, StartupTask[]>;
   session: FeishuUserSession | null;
+  feishuReady: boolean;
   canManage: boolean;
   canManageRoles: boolean;
   onTeamUpdated: (state: StartupBoardState) => void;
@@ -757,6 +759,8 @@ function MePage({
   onLogin: () => void;
 }) {
   void columns;
+  void canManage;
+  void canManageRoles;
   const member = state.team.find((m) => m.id === memberId) || state.team[0] || GUEST_MEMBER;
   const myTasks = state.tasks.filter(
     (t) => t.assigneeUserId === memberId && t.status !== "done"
@@ -768,8 +772,6 @@ function MePage({
   const myOverdue = myTasks.filter(
     (t) => t.dueAt && new Date(t.dueAt).getTime() < Date.now()
   );
-  const roles = boardRoles(state);
-  const [newRoleName, setNewRoleName] = useState("");
   const [tokenName, setTokenName] = useState("网页 AI Token");
   const [agentTokens, setAgentTokens] = useState<Array<{ id: string; name: string; tokenPreview: string; createdAt: string; lastUsedAt?: string; revokedAt?: string }>>([]);
   const [agentBusy, setAgentBusy] = useState(false);
@@ -777,14 +779,14 @@ function MePage({
   const [skillBundle, setSkillBundle] = useState<{ fileName: string; content: string; cliCommand: string; cliDownloadPath: string } | null>(null);
 
   useEffect(() => {
-    if (!session) {
+    if (!session && feishuReady) {
       setAgentTokens([]);
       setFreshToken("");
       setSkillBundle(null);
       return;
     }
     void loadAgentTokens();
-  }, [session?.memberId, session?.accessToken]);
+  }, [session?.memberId, session?.accessToken, memberId, feishuReady]);
 
   function formatDateTime(value?: string) {
     if (!value) return "未使用";
@@ -805,12 +807,13 @@ function MePage({
   }
 
   async function loadAgentTokens() {
-    if (!session) return;
+    if (!session && feishuReady) return;
     try {
-      const res = await fetch(`/api/agent/tokens?memberId=${encodeURIComponent(session.memberId)}`, {
-        headers: {
-          "x-feishu-access-token": session.accessToken
-        }
+      const actingMemberId = session?.memberId || memberId;
+      const headers: Record<string, string> = {};
+      if (session?.accessToken) headers["x-feishu-access-token"] = session.accessToken;
+      const res = await fetch(`/api/agent/tokens?memberId=${encodeURIComponent(actingMemberId)}`, {
+        headers
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "获取 AI Token 失败");
@@ -821,7 +824,7 @@ function MePage({
   }
 
   async function createAgentToken() {
-    if (!session) {
+    if (!session && feishuReady) {
       onError("请先通过飞书登录。");
       return;
     }
@@ -831,8 +834,8 @@ function MePage({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          memberId: session.memberId,
-          accessToken: session.accessToken,
+          memberId: session?.memberId || memberId,
+          accessToken: session?.accessToken || "local-preview",
           name: tokenName.trim() || "网页 AI Token"
         })
       });
@@ -851,15 +854,15 @@ function MePage({
   }
 
   async function revokeAgentToken(tokenId: string) {
-    if (!session) return;
+    if (!session && feishuReady) return;
     setAgentBusy(true);
     try {
       const res = await fetch(`/api/agent/tokens/${tokenId}`, {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          memberId: session.memberId,
-          accessToken: session.accessToken
+          memberId: session?.memberId || memberId,
+          accessToken: session?.accessToken || "local-preview"
         })
       });
       const json = await res.json();
@@ -877,167 +880,177 @@ function MePage({
     }
   }
 
-  async function updateMember(targetId: string, patch: MemberPatch) {
-    try {
-      const res = await fetch(`/api/team/${targetId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actorUserId: memberId, ...patch })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "成员更新失败");
-      onTeamUpdated(json.board);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "成员更新失败");
-    }
-  }
-
-  async function createRole() {
-    const name = newRoleName.trim();
-    if (!name) return;
-    try {
-      const res = await fetch("/api/roles", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actorUserId: memberId, name, permissions: [] })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "角色创建失败");
-      setNewRoleName("");
-      onTeamUpdated(json.board);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "角色创建失败");
-    }
-  }
-
-  async function updateRole(roleId: string, patch: { name?: string; permissions?: TeamPermission[] }) {
-    try {
-      const res = await fetch(`/api/roles/${roleId}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actorUserId: memberId, ...patch })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "角色更新失败");
-      onTeamUpdated(json.board);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "角色更新失败");
-    }
-  }
-
-  async function deleteRole(roleId: string) {
-    try {
-      const res = await fetch(`/api/roles/${roleId}`, {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ actorUserId: memberId })
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "角色删除失败");
-      onTeamUpdated(json.board);
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "角色删除失败");
-    }
-  }
-
   return (
     <div className="my-page">
-      <div className="my-header">
-        <div className="my-avatar">{session?.name?.[0] || member.name[0]}</div>
-        <div className="my-info">
-          <h3>{session?.name || member.name}</h3>
-          <p>{member.roleLabel}</p>
-          {session && <p className="my-login-hint">✓ 飞书已登录</p>}
-        </div>
-      </div>
-
-      {!session && (
-        <button className="feishu-login-btn" onClick={onLogin}>
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          飞书登录
-        </button>
-      )}
-
-      <div className="my-section">
-        <div className="my-section-title">
-          {session ? "当前身份" : "选择身份（预览模式）"}
-        </div>
-        <div className="member-switcher">
-          {(session ? state.team.filter((m) => m.id === memberId) : state.team).map((m) => (
-            <button key={m.id}
-              className={`member-chip ${m.id === memberId ? "active" : ""}`}
-              onClick={() => { if (!session) setMemberId(m.id); }}>
-              <span className="member-chip-avatar">{m.name[0]}</span>
-              <span>{m.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="my-section">
-        <div className="my-section-title">AI 代理</div>
-        {!session && (
-          <div className="empty-state">
-            <div className="empty-state-text">先用飞书登录，才能生成你的专属 AI Token 和 Skill。</div>
+      <aside className="my-sidebar">
+        <section className="my-profile-card">
+          <div className="my-header">
+            <div className="my-avatar">{session?.name?.[0] || member.name[0]}</div>
+            <div className="my-info">
+              <h3>{session?.name || member.name}</h3>
+              <p>{member.roleLabel}</p>
+              <p className="my-login-hint">{session ? "已连接飞书账号" : (feishuReady ? "当前使用网页身份" : "本地预览模式")}</p>
+            </div>
           </div>
-        )}
-        {session && (
-          <div className="agent-panel">
-            <div className="agent-form-row">
-              <input
-                className="form-input"
-                value={tokenName}
-                onChange={(event) => setTokenName(event.currentTarget.value)}
-                placeholder="Token 名称"
-              />
-              <button className="action-btn action-primary" onClick={createAgentToken} disabled={agentBusy}>
-                {agentBusy ? "处理中..." : "生成 Token"}
+          {!session && feishuReady && (
+            <button className="feishu-login-btn" onClick={onLogin}>
+              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              飞书登录
+            </button>
+          )}
+        </section>
+
+        <section className="my-card">
+          <div className="my-section-head">
+            <div className="my-section-title">{session ? "当前身份" : "预览身份"}</div>
+            <div className="my-section-subtitle">{session ? "当前 token 将以此身份执行" : "本地可切换成员验收 AI 链路"}</div>
+          </div>
+          <div className="member-switcher stacked">
+            {(session ? state.team.filter((m) => m.id === memberId) : state.team).map((m) => (
+              <button key={m.id}
+                className={`member-chip ${m.id === memberId ? "active" : ""}`}
+                onClick={() => { if (!session) setMemberId(m.id); }}>
+                <span className="member-chip-avatar">{m.name[0]}</span>
+                <span className="member-chip-copy">
+                  <strong>{m.name}</strong>
+                  <small>{roleForMember(state, m).name}</small>
+                </span>
               </button>
-            </div>
-            <div className="agent-hint">
-              生成后可直接下载专属 Skill，外部 AI 会自动带上当前用户 Token 调用你的 Web API。
-            </div>
+            ))}
+          </div>
+        </section>
 
-            {freshToken && skillBundle && (
-              <div className="agent-result-card">
-                <div className="agent-result-title">刚生成的 Token</div>
-                <code className="agent-token-value">{freshToken}</code>
-                <div className="agent-action-row">
-                  <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(freshToken).then(() => onError("Token 已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
-                    复制 Token
-                  </button>
-                  <button className="action-btn action-secondary" onClick={() => downloadText(skillBundle.fileName, skillBundle.content)}>
-                    下载 Skill
-                  </button>
-                  <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(skillBundle.cliCommand).then(() => onError("CLI 命令已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
-                    复制 CLI 命令
-                  </button>
-                  <a className="action-btn action-secondary agent-link-btn" href={skillBundle.cliDownloadPath} download>
-                    下载 CLI
-                  </a>
+        <section className="my-card">
+          <div className="my-section-head">
+            <div className="my-section-title">当前负载</div>
+            <div className="my-section-subtitle">让 AI 在接任务前先理解你的承载能力</div>
+          </div>
+          <div className="my-mini-metrics">
+            <div>
+              <strong>{activeCount}</strong>
+              <span>进行中</span>
+            </div>
+            <div>
+              <strong>{myOverdue.length}</strong>
+              <span>已超期</span>
+            </div>
+            <div>
+              <strong>{member.maxActiveTasks}</strong>
+              <span>WIP 上限</span>
+            </div>
+          </div>
+          <div className="wip-bar">
+            <span className="wip-bar-label">WIP</span>
+            <div className="wip-bar-track">
+              <div className={`wip-bar-fill ${wipRatio >= 1 ? "full" : wipRatio >= 0.75 ? "warning" : ""}`}
+                style={{ width: `${Math.min(100, wipRatio * 100)}%` }} />
+            </div>
+            <span className="wip-bar-text">{activeCount}/{member.maxActiveTasks}</span>
+          </div>
+        </section>
+
+        {myOverdue.length > 0 && (
+          <section className="my-card danger">
+            <div className="my-section-head">
+              <div className="my-section-title">超期风险</div>
+              <div className="my-section-subtitle">优先清理已经越过截止时间的事项</div>
+            </div>
+            <div className="task-list compact">
+              {myOverdue.map((task) => (
+                <div key={task.id} className="task-card overdue" style={{ cursor: "default", touchAction: "auto" }}>
+                  <div className="task-card-header">
+                    <span className={`task-priority ${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
+                    <span className="task-due-tag overdue">超期</span>
+                  </div>
+                  <div className="task-card-title">{task.title}</div>
+                  {task.dueAt && <div className="task-due-line">截止：{formatDue(task.dueAt)}</div>}
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          </section>
+        )}
+      </aside>
 
-            <div className="agent-token-list">
-              {(agentTokens.length === 0) && (
-                <div className="empty-state">
-                  <div className="empty-state-text">还没有可用的 AI Token。</div>
+      <div className="my-main">
+        <section className="my-hero-card">
+          <div className="my-section-head">
+            <div className="my-section-title">外部 AI 接入</div>
+            <div className="my-section-subtitle">为当前成员生成专属 token、skill 和 CLI，让网页端 AI 或本地代理直接接任务执行</div>
+          </div>
+          <div className="my-hero-badges">
+            <span className="task-type">Schema 驱动</span>
+            <span className="task-type">JSON 契约</span>
+            <span className="task-type">用户级权限</span>
+          </div>
+          {!session && feishuReady ? (
+            <div className="empty-state">
+              <div className="empty-state-text">先完成飞书登录，再为当前账号生成可交给外部 AI 的专属凭证。</div>
+            </div>
+          ) : (
+            <div className="agent-panel">
+              <div className="agent-form-row">
+                <input
+                  className="form-input"
+                  value={tokenName}
+                  onChange={(event) => setTokenName(event.currentTarget.value)}
+                  placeholder="Token 名称"
+                />
+                <button className="action-btn action-primary" onClick={createAgentToken} disabled={agentBusy}>
+                  {agentBusy ? "处理中..." : "生成 Token"}
+                </button>
+              </div>
+              <div className="agent-hint">
+                生成后即可下载该用户专属 skill 与 CLI。外部 AI 需要先读 schema，再按约定创建任务和推进动作，避免字段不一致或状态流转失败。
+              </div>
+
+              {freshToken && skillBundle && (
+                <div className="agent-result-card">
+                  <div className="agent-result-title">刚生成的访问凭证</div>
+                  <code className="agent-token-value">{freshToken}</code>
+                  <div className="agent-action-row">
+                    <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(freshToken).then(() => onError("Token 已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
+                      复制 Token
+                    </button>
+                    <button className="action-btn action-secondary" onClick={() => downloadText(skillBundle.fileName, skillBundle.content)}>
+                      下载 Skill
+                    </button>
+                    <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(skillBundle.cliCommand).then(() => onError("CLI 命令已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
+                      复制 CLI 命令
+                    </button>
+                    <a className="action-btn action-secondary agent-link-btn" href={skillBundle.cliDownloadPath} download>
+                      下载 CLI
+                    </a>
+                  </div>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+
+        <section className="my-card">
+          <div className="my-section-head">
+            <div className="my-section-title">已发放 Token</div>
+            <div className="my-section-subtitle">只保留仍在使用的凭证，发现泄露可立即吊销</div>
+          </div>
+          {agentTokens.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-text">还没有可用的 AI Token。</div>
+            </div>
+          ) : (
+            <div className="agent-token-grid">
               {agentTokens.map((token) => (
-                <div key={token.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
+                <div key={token.id} className="agent-token-card">
                   <div className="task-card-header">
                     <span className="task-type">{token.name}</span>
                     <span className={`task-type ${token.revokedAt ? "task-type-danger" : ""}`}>
                       {token.revokedAt ? "已吊销" : "生效中"}
                     </span>
                   </div>
-                  <div className="task-card-title" style={{ fontSize: 14 }}>{token.tokenPreview}</div>
-                  <div className="task-due-line">创建时间：{formatDateTime(token.createdAt)}</div>
-                  <div className="task-due-line">最后使用：{formatDateTime(token.lastUsedAt)}</div>
+                  <div className="task-card-title">{token.tokenPreview}</div>
+                  <div className="task-due-line">创建：{formatDateTime(token.createdAt)}</div>
+                  <div className="task-due-line">最近使用：{formatDateTime(token.lastUsedAt)}</div>
                   {!token.revokedAt && (
-                    <div className="agent-action-row" style={{ marginTop: 10 }}>
+                    <div className="agent-action-row">
                       <button className="action-btn action-danger" onClick={() => revokeAgentToken(token.id)} disabled={agentBusy}>
                         吊销
                       </button>
@@ -1046,159 +1059,34 @@ function MePage({
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </section>
 
-      {canManage && (
-        <div className="my-section" style={{ display: "none" }}>
-          <div className="my-section-title">成员管理</div>
-          <div className="task-list">
-            {state.team.map((m) => {
-              const role = roleForMember(state, m);
-              const explicit = (m.permissions || []).filter((permission) => !role.permissions.includes(permission));
-              return (
-                <div key={m.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
-                  <div className="task-card-header">
-                    <span className="task-type">{role.name}</span>
-                    <span className="task-type">{m.feishuOpenId ? "已绑定飞书" : "未绑定"}</span>
-                  </div>
-                  <input
-                    className="form-input"
-                    defaultValue={m.name}
-                    onBlur={(event) => {
-                      const name = event.currentTarget.value.trim();
-                      if (name && name !== m.name) updateMember(m.id, { name });
-                    }}
-                    aria-label="成员名称"
-                  />
-                  <select className="form-select" value={role.id} onChange={(event) => updateMember(m.id, { roleId: event.currentTarget.value })}>
-                    {roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                  <div className="risk-options compact">
-                    {ALL_PERMISSIONS.map((permission) => (
-                      <label key={permission} className="risk-option">
-                        <input
-                          type="checkbox"
-                          checked={role.permissions.includes(permission) || explicit.includes(permission)}
-                          disabled={role.permissions.includes(permission)}
-                          onChange={(event) => {
-                            const next = new Set(explicit);
-                            if (event.currentTarget.checked) next.add(permission);
-                            else next.delete(permission);
-                            updateMember(m.id, { permissions: Array.from(next) });
-                          }}
-                        />
-                        {PERMISSION_LABELS[permission]}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+        <section className="my-card">
+          <div className="my-section-head">
+            <div className="my-section-title">我的任务</div>
+            <div className="my-section-subtitle">给 AI 明确当前手头事项和状态，避免继续盲目新建重复任务</div>
           </div>
-        </div>
-      )}
-
-      {canManageRoles && (
-        <div className="my-section" style={{ display: "none" }}>
-          <div className="my-section-title">角色管理</div>
-          <div className="action-form" style={{ marginBottom: 10 }}>
-            <input className="form-input" placeholder="新角色名称" value={newRoleName} onChange={(event) => setNewRoleName(event.currentTarget.value)} />
-            <button className="action-btn action-primary" onClick={createRole} disabled={!newRoleName.trim()}>创建角色</button>
-          </div>
-          <div className="task-list">
-            {roles.map((role) => (
-              <div key={role.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
-                <div className="task-card-header">
-                  <span className="task-type">{role.system ? "系统角色" : "自定义角色"}</span>
-                  {!role.system && <button className="panel-icon-btn" onClick={() => deleteRole(role.id)}>删除</button>}
-                </div>
-                <input
-                  className="form-input"
-                  defaultValue={role.name}
-                  disabled={role.id === "role_founder"}
-                  onBlur={(event) => {
-                    const name = event.currentTarget.value.trim();
-                    if (name && name !== role.name) updateRole(role.id, { name });
-                  }}
-                />
-                <div className="risk-options compact">
-                  {ALL_PERMISSIONS.map((permission) => (
-                    <label key={permission} className="risk-option">
-                      <input
-                        type="checkbox"
-                        checked={role.permissions.includes(permission)}
-                        disabled={role.id === "role_founder"}
-                        onChange={(event) => {
-                          const next = new Set(role.permissions);
-                          if (event.currentTarget.checked) next.add(permission);
-                          else next.delete(permission);
-                          updateRole(role.id, { permissions: Array.from(next) });
-                        }}
-                      />
-                      {PERMISSION_LABELS[permission]}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="my-section">
-        <div className="my-section-title">当前负载</div>
-        <div className="wip-bar">
-          <span className="wip-bar-label">WIP</span>
-          <div className="wip-bar-track">
-            <div className={`wip-bar-fill ${wipRatio >= 1 ? "full" : wipRatio >= 0.75 ? "warning" : ""}`}
-              style={{ width: `${Math.min(100, wipRatio * 100)}%` }} />
-          </div>
-          <span className="wip-bar-text">{activeCount}/{member.maxActiveTasks}</span>
-        </div>
-      </div>
-
-      {myOverdue.length > 0 && (
-        <div className="my-section">
-          <div className="my-section-title" style={{ color: "var(--red)" }}>
-            超期任务 ({myOverdue.length})
-          </div>
-          <div className="task-list">
-            {myOverdue.map((task) => (
-              <div key={task.id} className="task-card overdue" style={{ cursor: "default", touchAction: "auto" }}>
-                <div className="task-card-header">
-                  <span className={`task-priority ${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
-                  <span className="task-due-tag overdue">超期</span>
-                </div>
-                <div className="task-card-title">{task.title}</div>
-                {task.dueAt && <div className="task-due-line">截止：{formatDue(task.dueAt)}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="my-section">
-        <div className="my-section-title">我的任务 ({myTasks.length})</div>
-        <div className="task-list">
-          {myTasks.length === 0 && (
+          {myTasks.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-text">当前没有进行中的任务，去看板领一个？</div>
+              <div className="empty-state-text">当前没有进行中的任务，可以去看板领取新的事项。</div>
+            </div>
+          ) : (
+            <div className="my-split-grid">
+              {myTasks.map((task) => (
+                <div key={task.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
+                  <div className="task-card-header">
+                    <span className={`task-priority ${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
+                    <span className="task-type">{TYPE_LABEL[task.type]}</span>
+                    <span className="task-type">{TASK_COLUMNS.find((c) => c.status === task.status)?.label}</span>
+                  </div>
+                  <div className="task-card-title">{task.title}</div>
+                  {task.dueAt && <div className="task-due-line">截止：{formatDue(task.dueAt)}</div>}
+                </div>
+              ))}
             </div>
           )}
-          {myTasks.map((task) => (
-            <div key={task.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
-              <div className="task-card-header">
-                <span className={`task-priority ${task.priority}`}>{PRIORITY_LABEL[task.priority]}</span>
-                <span className="task-type">{TYPE_LABEL[task.type]}</span>
-                <span className="task-type">{TASK_COLUMNS.find((c) => c.status === task.status)?.label}</span>
-              </div>
-              <div className="task-card-title">{task.title}</div>
-              {task.dueAt && <div className="task-due-line">截止：{formatDue(task.dueAt)}</div>}
-            </div>
-          ))}
-        </div>
+        </section>
       </div>
     </div>
   );
@@ -1298,12 +1186,38 @@ function AdminPage({
     return state.tasks.filter((task) => task.assigneeUserId === targetId && ["claimed", "doing", "review"].includes(task.status)).length;
   }
 
+  const customRoleCount = roles.filter((role) => !role.system).length;
+  const overloadedCount = state.team.filter((teamMember) => activeTasksForMember(teamMember.id) > teamMember.maxActiveTasks).length;
+  const privilegedCount = state.team.filter((teamMember) => {
+    const permissions = roleForMember(state, teamMember).permissions;
+    return canManageTeam(teamMember, state) || canDeleteTask(teamMember, state) || permissions.includes("manage_roles");
+  }).length;
+
   return (
     <div className="admin-page">
       <div className="analytics-hero">
         <div>
           <h2>管理后台</h2>
-          <p>管理用户、角色和权限。用户随飞书账号自动加入，不限制人数。</p>
+          <p>统一管理成员、角色与权限。这里的层级应当足够清楚，外部 AI 与人工运营都能快速找到身份、负载与授权边界。</p>
+        </div>
+      </div>
+
+      <div className="admin-summary-strip">
+        <div className="admin-summary-card">
+          <strong>{state.team.length}</strong>
+          <span>成员数</span>
+        </div>
+        <div className="admin-summary-card">
+          <strong>{customRoleCount}</strong>
+          <span>自定义角色</span>
+        </div>
+        <div className="admin-summary-card">
+          <strong>{overloadedCount}</strong>
+          <span>超载成员</span>
+        </div>
+        <div className="admin-summary-card">
+          <strong>{privilegedCount}</strong>
+          <span>高权限成员</span>
         </div>
       </div>
 
@@ -1312,14 +1226,14 @@ function AdminPage({
           <section className="analytics-card wide">
             <div className="analytics-card-header">
               <div>
-                <h3>用户管理</h3>
-                <p>{state.team.length} 个账号，权限跟随账号而不是角色统计口径。</p>
+                <h3>成员工作台</h3>
+                <p>{state.team.length} 个账号。左侧定位成员，右侧立即调整身份、技能和权限，避免在多张卡之间来回跳转。</p>
               </div>
             </div>
             <div className="admin-user-shell">
-              <div className="admin-user-table" role="table" aria-label="用户列表">
+              <div className="admin-user-table" role="table" aria-label="成员列表">
                 <div className="admin-user-row admin-user-row-head" role="row">
-                  <span>用户</span>
+                  <span>成员</span>
                   <span>角色</span>
                   <span>状态</span>
                   <span>负载</span>
@@ -1361,6 +1275,21 @@ function AdminPage({
                       <div>
                         <strong>{selectedMember.name}</strong>
                         <small>{role.name} · {activeCount}/{selectedMember.maxActiveTasks}</small>
+                      </div>
+                    </div>
+
+                    <div className="admin-detail-metrics">
+                      <div>
+                        <strong>{selectedSkills.length}</strong>
+                        <span>技能标签</span>
+                      </div>
+                      <div>
+                        <strong>{explicit.length}</strong>
+                        <span>额外权限</span>
+                      </div>
+                      <div>
+                        <strong>{selectedMember.lastLoginAt ? "已登录" : "未登录"}</strong>
+                        <span>登录状态</span>
                       </div>
                     </div>
 
@@ -1406,7 +1335,7 @@ function AdminPage({
                     </div>
 
                     <div className="admin-fieldset">
-                      <div className="admin-fieldset-title">技能</div>
+                      <div className="admin-fieldset-title">技能标签</div>
                       <div className="admin-check-grid">
                         {TASK_TYPES.map((type) => (
                           <label key={type} className="risk-option">
@@ -1461,11 +1390,11 @@ function AdminPage({
         )}
 
         {canManageRoles && (
-          <section className="analytics-card">
+          <section className="analytics-card admin-side-stack">
             <div className="analytics-card-header">
               <div>
                 <h3>角色管理</h3>
-                <p>创建角色并定义默认权限，再分配给用户。</p>
+                <p>先定义角色默认权限，再分配给成员。减少逐人打补丁式授权。</p>
               </div>
             </div>
             <div className="action-form" style={{ marginBottom: 12 }}>
