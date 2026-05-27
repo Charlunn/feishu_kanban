@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { createTask, getBoardSummary } from "@/domain/operations";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { canCreateTask } from "@/domain/permissions";
 import { buildTaskCard } from "@/lib/feishu/cards";
 import { getKanbanStore } from "@/lib/store";
@@ -39,7 +40,8 @@ function createTaskErrorMessage(error: ZodError): string {
 
 export async function GET() {
   const board = await getKanbanStore().read();
-  return NextResponse.json({ board, summary: getBoardSummary(board) });
+  const safeBoard = sanitizeBoardForClient(board);
+  return NextResponse.json({ board: safeBoard, summary: getBoardSummary(safeBoard) });
 }
 
 export async function POST(request: Request) {
@@ -125,7 +127,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { board, task, feishuCardPreview: card, messageId },
+      { board: sanitizeBoardForClient(board), task, feishuCardPreview: card, messageId },
       { status: 201 }
     );
   } catch (error) {

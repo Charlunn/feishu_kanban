@@ -1,0 +1,4 @@
+version: 1
+display_name: DOTSTACK Kanban Agent
+short_description: Publish structured tasks and execute allowed Kanban actions through the external agent API.
+default_prompt: Use the provided DOTSTACK Kanban API base URL and bearer token to inspect capabilities, draft the requirement as a task, then execute only the allowed actions.

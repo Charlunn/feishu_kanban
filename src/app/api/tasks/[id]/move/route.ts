@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { moveTaskByAction, moveTaskByDrop } from "@/domain/operations";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { getKanbanStore } from "@/lib/store";
 import { moveTaskSchema } from "@/lib/validation";
 import { patchInteractiveCard, isFeishuConfigured, addMessageReaction } from "@/lib/feishu/client";
@@ -51,7 +52,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       }
     }
 
-    return NextResponse.json({ board });
+    return NextResponse.json({ board: sanitizeBoardForClient(board) });
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json({ error: error.issues[0]?.message || "推进参数不完整。" }, { status: 400 });

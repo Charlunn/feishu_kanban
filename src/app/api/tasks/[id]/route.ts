@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { canDeleteTask } from "@/domain/permissions";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { getKanbanStore } from "@/lib/store";
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -29,7 +30,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       };
     });
 
-    return NextResponse.json({ board });
+    return NextResponse.json({ board: sanitizeBoardForClient(board) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "任务删除失败。" },
@@ -37,4 +38,3 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     );
   }
 }
-

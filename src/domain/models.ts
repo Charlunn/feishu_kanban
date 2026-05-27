@@ -13,6 +13,16 @@ export interface TeamRole {
   system?: boolean;
 }
 
+export interface AgentTokenRecord {
+  id: string;
+  name: string;
+  tokenHash: string;
+  tokenPreview: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+}
+
 export type TaskStatus = "pool" | "ready" | "claimed" | "doing" | "review" | "done" | "blocked";
 
 export const TASK_PRIORITIES = ["urgent", "high", "normal", "low"] as const;
@@ -59,6 +69,9 @@ export interface TeamMember {
   mode: MemberMode;
   maxActiveTasks: number;
   skills: TaskType[];
+  agentAccess?: {
+    tokens: AgentTokenRecord[];
+  };
 }
 
 export interface WorkLink {
@@ -119,7 +132,16 @@ export interface BoardAuditLog {
   at: string;
   actorUserId: string;
   taskId?: string;
-  action: BoardAction | "feishu_event_received" | "feishu_card_sent" | "permission_denied" | "feishu_login" | "reminder_sent";
+  action:
+    | BoardAction
+    | "feishu_event_received"
+    | "feishu_card_sent"
+    | "permission_denied"
+    | "feishu_login"
+    | "reminder_sent"
+    | "agent_token_created"
+    | "agent_token_revoked"
+    | "agent_api_call";
   details: Record<string, unknown>;
 }
 

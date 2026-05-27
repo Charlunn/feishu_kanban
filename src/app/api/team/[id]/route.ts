@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { TASK_TYPES } from "@/domain/models";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { ALL_PERMISSIONS, boardRoles, canManageTeam, memberPermissions, roleForMember } from "@/domain/permissions";
 import { getKanbanStore } from "@/lib/store";
 
@@ -58,7 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       };
     });
 
-    return NextResponse.json({ board });
+    return NextResponse.json({ board: sanitizeBoardForClient(board) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "成员更新失败。" },

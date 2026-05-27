@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { getFeishuConfig, getTenantAccessToken, isFeishuConfigured } from "@/lib/feishu/client";
 import { getKanbanStore } from "@/lib/store";
 import type { FeishuUserSession, StartupBoardState, TeamMember } from "@/domain/models";
@@ -222,7 +223,9 @@ export async function POST(request: Request) {
       expiresAt: new Date(Date.now() + (expires_in || 7200) * 1000).toISOString()
     };
 
-    return NextResponse.json({ session, member, board });
+    const safeBoard = sanitizeBoardForClient(board);
+    const safeMember = safeBoard.team.find((item) => item.id === member.id) || member;
+    return NextResponse.json({ session, member: safeMember, board: safeBoard });
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error ? error.message : "登录失败",

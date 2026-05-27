@@ -13,6 +13,12 @@ import {
   startTask,
   suggestNextTaskForMember
 } from "../src/domain/operations.ts";
+import {
+  buildAgentCapabilities,
+  buildAgentIdentity,
+  createAgentTokenForMember
+} from "../src/lib/agent/auth.ts";
+import { sanitizeBoardForClient } from "../src/lib/agent/state.ts";
 import { demoState } from "../src/domain/seed.ts";
 import { createTaskSchema } from "../src/lib/validation.ts";
 import { buildBoardDigestCard, buildTaskCard } from "../src/lib/feishu/cards.ts";
@@ -136,5 +142,20 @@ const action = normalizeFeishuCardAction({
 assert.equal(action.taskId, "task_1");
 assert.equal(action.action, "claim_task");
 assert.equal(action.openId, "ou_builder_demo");
+
+const createdToken = createAgentTokenForMember(base, "member_founder", "Web AI Token", "2026-05-21T04:11:00.000Z");
+assert.ok(createdToken.token.startsWith("dstk_"));
+assert.equal(createdToken.record.name, "Web AI Token");
+assert.ok(createdToken.record.tokenHash);
+const securedBoard = sanitizeBoardForClient(createdToken.board);
+const founderAfterSanitize = securedBoard.team.find((member) => member.id === "member_founder");
+assert.ok(founderAfterSanitize);
+assert.equal(founderAfterSanitize.agentAccess.tokens[0].tokenHash, undefined);
+const identity = buildAgentIdentity(base.team[0], base);
+assert.equal(identity.memberId, "member_founder");
+const capabilities = buildAgentCapabilities(base.team[0], base);
+assert.equal(capabilities.canCreateTask, true);
+assert.equal(capabilities.canManageTeam, true);
+assert.equal(capabilities.canManageAllTasks, true);
 
 console.log("Feishu startup kanban tests passed.");

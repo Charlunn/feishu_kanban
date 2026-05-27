@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { sanitizeBoardForClient } from "@/lib/agent/state";
 import { ALL_PERMISSIONS, boardRoles, canManageRoles } from "@/domain/permissions";
 import { getKanbanStore } from "@/lib/store";
 
@@ -38,7 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       };
     });
 
-    return NextResponse.json({ board });
+    return NextResponse.json({ board: sanitizeBoardForClient(board) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "角色更新失败。" },
@@ -67,7 +68,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       };
     });
 
-    return NextResponse.json({ board });
+    return NextResponse.json({ board: sanitizeBoardForClient(board) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "角色删除失败。" },
@@ -75,4 +76,3 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     );
   }
 }
-

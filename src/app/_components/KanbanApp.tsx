@@ -756,6 +756,7 @@ function MePage({
   onError: (message: string) => void;
   onLogin: () => void;
 }) {
+  void columns;
   const member = state.team.find((m) => m.id === memberId) || state.team[0] || GUEST_MEMBER;
   const myTasks = state.tasks.filter(
     (t) => t.assigneeUserId === memberId && t.status !== "done"
@@ -769,6 +770,112 @@ function MePage({
   );
   const roles = boardRoles(state);
   const [newRoleName, setNewRoleName] = useState("");
+  const [tokenName, setTokenName] = useState("网页 AI Token");
+  const [agentTokens, setAgentTokens] = useState<Array<{ id: string; name: string; tokenPreview: string; createdAt: string; lastUsedAt?: string; revokedAt?: string }>>([]);
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [freshToken, setFreshToken] = useState("");
+  const [skillBundle, setSkillBundle] = useState<{ fileName: string; content: string; cliCommand: string; cliDownloadPath: string } | null>(null);
+
+  useEffect(() => {
+    if (!session) {
+      setAgentTokens([]);
+      setFreshToken("");
+      setSkillBundle(null);
+      return;
+    }
+    void loadAgentTokens();
+  }, [session?.memberId, session?.accessToken]);
+
+  function formatDateTime(value?: string) {
+    if (!value) return "未使用";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN");
+  }
+
+  function downloadText(filename: string, content: string) {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const href = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(href);
+  }
+
+  async function loadAgentTokens() {
+    if (!session) return;
+    try {
+      const res = await fetch(`/api/agent/tokens?memberId=${encodeURIComponent(session.memberId)}`, {
+        headers: {
+          "x-feishu-access-token": session.accessToken
+        }
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "获取 AI Token 失败");
+      setAgentTokens(json.data.tokens || []);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "获取 AI Token 失败");
+    }
+  }
+
+  async function createAgentToken() {
+    if (!session) {
+      onError("请先通过飞书登录。");
+      return;
+    }
+    setAgentBusy(true);
+    try {
+      const res = await fetch("/api/agent/tokens", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          memberId: session.memberId,
+          accessToken: session.accessToken,
+          name: tokenName.trim() || "网页 AI Token"
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "创建 AI Token 失败");
+      setFreshToken(json.data.token);
+      setSkillBundle(json.data.skill);
+      setAgentTokens(json.data.tokens || []);
+      onTeamUpdated(json.data.board);
+      onError("已生成新的 AI Token。");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "创建 AI Token 失败");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function revokeAgentToken(tokenId: string) {
+    if (!session) return;
+    setAgentBusy(true);
+    try {
+      const res = await fetch(`/api/agent/tokens/${tokenId}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          memberId: session.memberId,
+          accessToken: session.accessToken
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "吊销 AI Token 失败");
+      setAgentTokens(json.data.tokens || []);
+      if (freshToken) {
+        setFreshToken("");
+        setSkillBundle(null);
+      }
+      onError("AI Token 已吊销。");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "吊销 AI Token 失败");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
 
   async function updateMember(targetId: string, patch: MemberPatch) {
     try {
@@ -835,7 +942,6 @@ function MePage({
 
   return (
     <div className="my-page">
-      {/* Identity */}
       <div className="my-header">
         <div className="my-avatar">{session?.name?.[0] || member.name[0]}</div>
         <div className="my-info">
@@ -845,7 +951,6 @@ function MePage({
         </div>
       </div>
 
-      {/* Login button if not logged in via Feishu */}
       {!session && (
         <button className="feishu-login-btn" onClick={onLogin}>
           <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -853,7 +958,6 @@ function MePage({
         </button>
       )}
 
-      {/* Member switcher */}
       <div className="my-section">
         <div className="my-section-title">
           {session ? "当前身份" : "选择身份（预览模式）"}
@@ -868,6 +972,82 @@ function MePage({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="my-section">
+        <div className="my-section-title">AI 代理</div>
+        {!session && (
+          <div className="empty-state">
+            <div className="empty-state-text">先用飞书登录，才能生成你的专属 AI Token 和 Skill。</div>
+          </div>
+        )}
+        {session && (
+          <div className="agent-panel">
+            <div className="agent-form-row">
+              <input
+                className="form-input"
+                value={tokenName}
+                onChange={(event) => setTokenName(event.currentTarget.value)}
+                placeholder="Token 名称"
+              />
+              <button className="action-btn action-primary" onClick={createAgentToken} disabled={agentBusy}>
+                {agentBusy ? "处理中..." : "生成 Token"}
+              </button>
+            </div>
+            <div className="agent-hint">
+              生成后可直接下载专属 Skill，外部 AI 会自动带上当前用户 Token 调用你的 Web API。
+            </div>
+
+            {freshToken && skillBundle && (
+              <div className="agent-result-card">
+                <div className="agent-result-title">刚生成的 Token</div>
+                <code className="agent-token-value">{freshToken}</code>
+                <div className="agent-action-row">
+                  <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(freshToken).then(() => onError("Token 已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
+                    复制 Token
+                  </button>
+                  <button className="action-btn action-secondary" onClick={() => downloadText(skillBundle.fileName, skillBundle.content)}>
+                    下载 Skill
+                  </button>
+                  <button className="action-btn action-secondary" onClick={() => navigator.clipboard?.writeText(skillBundle.cliCommand).then(() => onError("CLI 命令已复制。")).catch(() => onError("复制失败，请手动复制。"))}>
+                    复制 CLI 命令
+                  </button>
+                  <a className="action-btn action-secondary agent-link-btn" href={skillBundle.cliDownloadPath} download>
+                    下载 CLI
+                  </a>
+                </div>
+              </div>
+            )}
+
+            <div className="agent-token-list">
+              {(agentTokens.length === 0) && (
+                <div className="empty-state">
+                  <div className="empty-state-text">还没有可用的 AI Token。</div>
+                </div>
+              )}
+              {agentTokens.map((token) => (
+                <div key={token.id} className="task-card" style={{ cursor: "default", touchAction: "auto" }}>
+                  <div className="task-card-header">
+                    <span className="task-type">{token.name}</span>
+                    <span className={`task-type ${token.revokedAt ? "task-type-danger" : ""}`}>
+                      {token.revokedAt ? "已吊销" : "生效中"}
+                    </span>
+                  </div>
+                  <div className="task-card-title" style={{ fontSize: 14 }}>{token.tokenPreview}</div>
+                  <div className="task-due-line">创建时间：{formatDateTime(token.createdAt)}</div>
+                  <div className="task-due-line">最后使用：{formatDateTime(token.lastUsedAt)}</div>
+                  {!token.revokedAt && (
+                    <div className="agent-action-row" style={{ marginTop: 10 }}>
+                      <button className="action-btn action-danger" onClick={() => revokeAgentToken(token.id)} disabled={agentBusy}>
+                        吊销
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {canManage && (
@@ -967,7 +1147,6 @@ function MePage({
         </div>
       )}
 
-      {/* WIP */}
       <div className="my-section">
         <div className="my-section-title">当前负载</div>
         <div className="wip-bar">
@@ -980,11 +1159,10 @@ function MePage({
         </div>
       </div>
 
-      {/* Overdue warning */}
       {myOverdue.length > 0 && (
         <div className="my-section">
           <div className="my-section-title" style={{ color: "var(--red)" }}>
-            ⚠ 超期任务 ({myOverdue.length})
+            超期任务 ({myOverdue.length})
           </div>
           <div className="task-list">
             {myOverdue.map((task) => (
@@ -1001,7 +1179,6 @@ function MePage({
         </div>
       )}
 
-      {/* My tasks */}
       <div className="my-section">
         <div className="my-section-title">我的任务 ({myTasks.length})</div>
         <div className="task-list">
